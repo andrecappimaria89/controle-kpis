@@ -1,0 +1,9 @@
+{
+  "name": "controle-kpis-automatizados",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dashboard de gestao de KPIs de automacao de testes e bugs (DIRECT, CBB, PVP, CS, RFs)",
+  "scripts": {
+    "build": "node scripts/generate-config.js"
+  }
+}

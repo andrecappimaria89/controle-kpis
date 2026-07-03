@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Controle de KPIs Automatizados</title>
+<meta name="description" content="Dashboard de gestão de KPIs de automação de testes e bugs" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ======================= HEADER ======================= -->
+<header class="app-header">
+  <div class="header-top">
+    <div class="brand">
+      <span class="brand-mark">KPI</span>
+      <div class="brand-text">
+        <h1>Controle de KPIs Automatizados</h1>
+        <p id="connectionStatus" class="connection-status">verificando conexão…</p>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="mode-toggle" role="tablist" aria-label="Modo de visualização">
+        <button class="mode-btn active" data-mode="edicao" role="tab" aria-selected="true">Edição</button>
+        <button class="mode-btn" data-mode="executivo" role="tab" aria-selected="false">Executivo</button>
+      </div>
+      <button id="saveBtn" class="btn btn-primary">Salvar alterações</button>
+    </div>
+  </div>
+
+  <nav class="area-tabs" id="areaTabs" aria-label="Áreas"></nav>
+</header>
+
+<main>
+
+  <!-- ======================= RESUMO GERAL ======================= -->
+  <section class="summary-grid" id="summaryGrid" aria-label="Resumo geral da área"></section>
+
+  <!-- ======================= DASHBOARDS ======================= -->
+  <section class="dashboards">
+    <div class="chart-card">
+      <div class="chart-card-head">
+        <h2>Volumetria de Testes Automatizados</h2>
+        <span class="legend"><i class="dot dot-blue"></i>Planejados <i class="dot dot-green"></i>Realizados</span>
+      </div>
+      <div class="chart-wrap"><canvas id="automationChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-head">
+        <h2>Volumetria de Bugs</h2>
+        <span class="legend"><i class="dot dot-orange"></i>Abertos <i class="dot dot-green"></i>Resolvidos</span>
+      </div>
+      <div class="chart-wrap"><canvas id="bugsChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ======================= KPIs ======================= -->
+  <section class="kpi-section">
+    <h2 class="section-title">Indicadores (KPIs)</h2>
+    <div class="kpi-grid" id="kpiGrid"></div>
+  </section>
+
+  <!-- ======================= TABELAS DE ENTRADA (modo edição) ======================= -->
+  <section class="tables-section" id="tablesSection">
+    <div class="tables-toolbar">
+      <h2 class="section-title">Dados de Entrada</h2>
+      <div class="toolbar-actions">
+        <button id="duplicateBtn" class="btn btn-ghost">Duplicar estrutura p/ todas as áreas</button>
+        <button id="exportCsvBtn" class="btn btn-ghost">Exportar CSV</button>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-card-head">
+        <h3>Tabela 1 — Volumetria de Testes Automatizados</h3>
+        <button class="btn btn-add" data-add="automation">+ Adicionar mês</button>
+      </div>
+      <div class="table-scroll">
+        <table id="automationTable" class="data-table">
+          <thead>
+            <tr><th>Mês</th><th>Planejados</th><th>Realizados</th><th>%</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-card-head">
+        <h3>Tabela 2 — Volumetria de Abertura de Bugs</h3>
+        <button class="btn btn-add" data-add="bugs">+ Adicionar mês</button>
+      </div>
+      <div class="table-scroll">
+        <table id="bugsTable" class="data-table">
+          <thead>
+            <tr><th>Mês</th><th>Abertos</th><th>Resolvidos</th><th>Índice de Resolução</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<!-- ======================= SCRIPTS ======================= -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" defer></script>
+<script src="js/config.js" defer></script>
+<script src="js/calc.js" defer></script>
+<script src="js/supabaseClient.js" defer></script>
+<script src="js/app.js" defer></script>
+</body>
+</html>
