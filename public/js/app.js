@@ -299,12 +299,36 @@ function renderSummary() {
 }
 
 // ------------------------------- RENDER: CHARTS -------------------------------
+let chartLibRetries = 0;
+
 function renderCharts() {
   const { automation, bugs } = currentAreaData();
 
+  const autoWrap = document.getElementById('automationChart').parentElement;
+  const bugsWrap = document.getElementById('bugsChart').parentElement;
+
+  if (!window.Chart) {
+    // Biblioteca de graficos ainda nao carregou (rede lenta) ou foi bloqueada
+    // (ex: extensao/adblocker). Tenta novamente por alguns segundos antes de
+    // desistir e avisar o usuario claramente, em vez de deixar em branco.
+    if (chartLibRetries < 10) {
+      chartLibRetries += 1;
+      setTimeout(renderCharts, 400);
+      return;
+    }
+    const msg = `
+      <div style="display:flex;align-items:center;justify-content:center;height:100%;text-align:center;color:#dc2626;font-size:13px;padding:0 20px;">
+        Não foi possível carregar a biblioteca de gráficos (Chart.js).<br />
+        Verifique se algum bloqueador de anúncios/extensão está bloqueando scripts externos e recarregue a página.
+      </div>`;
+    autoWrap.innerHTML = msg;
+    bugsWrap.innerHTML = msg;
+    return;
+  }
+
   const autoCtx = document.getElementById('automationChart');
   const bugsCtx = document.getElementById('bugsChart');
-  if (!window.Chart) return; // CDN ainda carregando
+  if (!autoCtx || !bugsCtx) return; // canvas foi substituido pela mensagem de erro acima em uma tentativa anterior
 
   if (charts.automation) charts.automation.destroy();
   if (charts.bugs) charts.bugs.destroy();

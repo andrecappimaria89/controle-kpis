@@ -64,10 +64,10 @@ async function fetchAllData() {
 /**
  * Grava o estado completo de UMA area no Supabase.
  *
- * Estrategia "apagar e regravar" para automation_metrics/bug_metrics: assim,
- * se o usuario excluir um mes na tela, o registro correspondente tambem
- * desaparece do banco (um upsert simples deixaria esse mes "orfao" la).
- * O banco fica sempre um espelho exato do que esta na tela.
+ * Ordem importante para nunca arriscar perder dados: primeiro grava (upsert)
+ * os meses atuais, e só DEPOIS remove do banco os meses que não existem mais
+ * na tela (ex: usuário excluiu um mês). Assim nunca existe um instante em
+ * que a área fique com zero linhas no banco por causa de uma queda de rede.
  */
 async function saveAreaData(areaId, areaName, automationRows, bugRows, kpiConfigs) {
   if (!supabaseClient) throw new Error('Supabase nao configurado');
@@ -98,33 +98,31 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, kpiConfig
     kpi_type: cfg.type,
   }));
 
-  // automation_metrics: apaga tudo da area e regrava do zero
-  const automationChain = (async () => {
-    const { error: delErr } = await supabaseClient.from('automation_metrics').delete().eq('area_id', areaId);
-    if (delErr) throw delErr;
-    if (automationPayload.length) {
-      const { error: insErr } = await supabaseClient.from('automation_metrics').insert(automationPayload);
-      if (insErr) throw insErr;
+  /** upsert os meses atuais, depois apaga do banco os meses que sumiram da tela */
+  async function syncTable(table, payload, currentMonths) {
+    if (payload.length) {
+      const { error: upErr } = await supabaseClient.from(table).upsert(payload, { onConflict: 'area_id,month' });
+      if (upErr) throw upErr;
     }
-  })();
 
-  // bug_metrics: apaga tudo da area e regrava do zero
-  const bugsChain = (async () => {
-    const { error: delErr } = await supabaseClient.from('bug_metrics').delete().eq('area_id', areaId);
-    if (delErr) throw delErr;
-    if (bugPayload.length) {
-      const { error: insErr } = await supabaseClient.from('bug_metrics').insert(bugPayload);
-      if (insErr) throw insErr;
+    let delQuery = supabaseClient.from(table).delete().eq('area_id', areaId);
+    if (currentMonths.length) {
+      const list = currentMonths.map((m) => `"${m.replace(/"/g, '')}"`).join(',');
+      delQuery = delQuery.not('month', 'in', `(${list})`);
     }
-  })();
+    const { error: delErr } = await delQuery;
+    if (delErr) throw delErr;
+  }
 
-  // kpi_configs: as chaves (kpi1..kpi6) sao fixas, entao upsert e suficiente
-  const kpiChain = (async () => {
-    const { error } = await supabaseClient.from('kpi_configs').upsert(kpiPayload, { onConflict: 'area_id,kpi_key' });
-    if (error) throw error;
-  })();
-
-  await Promise.all([automationChain, bugsChain, kpiChain]);
+  await Promise.all([
+    syncTable('automation_metrics', automationPayload, automationRows.map((r) => r.month)),
+    syncTable('bug_metrics', bugPayload, bugRows.map((r) => r.month)),
+    (async () => {
+      if (!kpiPayload.length) return;
+      const { error } = await supabaseClient.from('kpi_configs').upsert(kpiPayload, { onConflict: 'area_id,kpi_key' });
+      if (error) throw error;
+    })(),
+  ]);
 }
 
 window.DataStore = {
