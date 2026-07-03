@@ -119,28 +119,30 @@ function currentAreaData() {
   return state.data[state.currentArea];
 }
 
+function updateConnectionStatus(kind, text) {
+  const el = document.getElementById('connectionStatus');
+  if (!el) return;
+  el.textContent = text;
+  el.className = `connection-status ${kind}`;
+}
+
 // -------------------------------- PERSISTENCIA --------------------------------
 async function loadInitialData() {
-  const statusEl = document.getElementById('connectionStatus');
-
   if (window.DataStore.IS_SUPABASE_CONFIGURED) {
     try {
       const remote = await window.DataStore.fetchAllData();
       if (remote) {
         hydrateStateFromSupabase(remote);
-        statusEl.textContent = 'Conectado ao Supabase';
-        statusEl.className = 'connection-status ok';
+        updateConnectionStatus('ok', 'Conectado ao Supabase');
         return;
       }
     } catch (err) {
       console.error(err);
-      statusEl.textContent = 'Falha ao conectar ao Supabase — usando dados locais';
-      statusEl.className = 'connection-status error';
-      showToast('Não foi possível conectar ao Supabase. Usando dados salvos localmente.', 'error');
+      updateConnectionStatus('error', 'Falha ao conectar ao Supabase — usando dados locais');
+      showToast('Não foi possível conectar ao Supabase. Usando dados salvos localmente. Suas próximas edições continuam seguras no navegador.', 'error');
     }
   } else {
-    statusEl.textContent = 'Supabase não configurado — modo local (localStorage)';
-    statusEl.className = 'connection-status local';
+    updateConnectionStatus('local', 'Supabase não configurado — modo local (localStorage)');
   }
 
   const local = window.DataStore.localLoad();
@@ -179,27 +181,76 @@ function hydrateStateFromSupabase(remote) {
   state = { currentArea: state.currentArea || 'DIRECT', mode: state.mode || 'edicao', data };
 }
 
-async function persistState() {
+let autosaveTimer = null;
+let autosaveInFlight = false;
+
+/**
+ * Chamada apos QUALQUER edicao (tabela, titulo/descricao de KPI, adicionar/
+ * remover mes, duplicar estrutura). Salva no localStorage imediatamente
+ * (rede de seguranca instantanea) e agenda uma gravacao no Supabase pouco
+ * depois, para nao disparar uma chamada de rede a cada tecla digitada.
+ */
+function scheduleAutosave() {
+  window.DataStore.localSave(state); // rede de seguranca imediata, sempre
+
+  if (!window.DataStore.IS_SUPABASE_CONFIGURED) return;
+
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(async () => {
+    if (autosaveInFlight) { scheduleAutosave(); return; } // tenta de novo depois
+    autosaveInFlight = true;
+    try {
+      await persistState({ silent: true });
+    } finally {
+      autosaveInFlight = false;
+    }
+  }, 1500);
+}
+
+/** Garante que temos o id de cada area antes de gravar; tenta buscar de novo se faltar. */
+async function ensureAreaIds() {
+  if (Object.keys(areaIdByName).length >= AREA_NAMES.length) return;
+  const remote = await window.DataStore.fetchAllData();
+  if (remote && remote.areas) {
+    remote.areas.forEach((a) => { areaIdByName[a.name] = a.id; });
+  }
+}
+
+async function persistState(opts = {}) {
+  const { silent = false } = opts;
+  window.DataStore.localSave(state); // rede de seguranca local, sempre grava primeiro
+
   if (window.DataStore.IS_SUPABASE_CONFIGURED) {
     try {
+      await ensureAreaIds();
+
+      const missing = AREA_NAMES.filter((name) => !areaIdByName[name]);
+      if (missing.length) {
+        throw new Error(
+          `Área(s) não encontrada(s) no Supabase: ${missing.join(', ')}. ` +
+          'Confirme se o script supabase/schema.sql foi executado no seu projeto.'
+        );
+      }
+
       for (const name of AREA_NAMES) {
         const areaId = areaIdByName[name];
-        if (!areaId) continue; // area ainda nao sincronizada (schema.sql nao rodado?)
         const areaData = state.data[name];
         await window.DataStore.saveAreaData(areaId, name, areaData.automation, areaData.bugs, areaData.kpis);
       }
-      window.DataStore.localSave(state); // mantem copia local tambem, como cache offline
-      showToast('Alterações salvas no Supabase com sucesso!', 'success');
-      return;
+
+      updateConnectionStatus('ok', 'Conectado ao Supabase');
+      if (!silent) showToast('Alterações salvas no Supabase com sucesso!', 'success');
+      return true;
     } catch (err) {
       console.error(err);
-      showToast('Erro ao salvar no Supabase. Verifique sua conexão. Alterações mantidas localmente.', 'error');
-      window.DataStore.localSave(state);
-      return;
+      updateConnectionStatus('error', 'Falha ao salvar no Supabase — dados mantidos localmente');
+      if (!silent) showToast('Erro ao salvar no Supabase. Alterações ficaram salvas localmente e serão reenviadas.', 'error');
+      return false;
     }
   }
-  const ok = window.DataStore.localSave(state);
-  showToast(ok ? 'Alterações salvas localmente (Supabase não configurado).' : 'Erro ao salvar localmente.', ok ? 'success' : 'error');
+
+  if (!silent) showToast('Alterações salvas localmente (Supabase não configurado).', 'success');
+  return true;
 }
 
 // -------------------------------- RENDER: TABS --------------------------------
@@ -405,6 +456,7 @@ function renderKpis() {
       const key = e.target.dataset.kpi;
       const field = e.target.dataset.kpiField;
       currentAreaData().kpis[key][field] = e.target.value;
+      scheduleAutosave();
     });
   });
 }
@@ -460,6 +512,7 @@ function bindTableEvents() {
       }
 
       currentAreaData()[table][idx][field] = value;
+      scheduleAutosave();
       renderSummary();
       renderKpis();
       renderCharts();
@@ -477,6 +530,7 @@ function bindTableEvents() {
     btn.addEventListener('click', (e) => {
       const { remove, idx } = e.target.dataset;
       currentAreaData()[remove].splice(Number(idx), 1);
+      scheduleAutosave();
       renderAll();
     });
   });
@@ -499,6 +553,7 @@ function addMonth(table) {
   } else {
     areaData.bugs.push({ month, opened: '', resolved: '' });
   }
+  scheduleAutosave();
   renderAll();
 }
 
@@ -538,6 +593,7 @@ function duplicateStructureToAllAreas() {
     if (name === state.currentArea) return;
     state.data[name] = JSON.parse(JSON.stringify(source));
   });
+  scheduleAutosave();
   showToast(`Estrutura de "${state.currentArea}" duplicada para todas as áreas.`, 'success');
   renderAll();
 }
@@ -580,6 +636,12 @@ async function init() {
     btn.addEventListener('click', () => addMonth(btn.dataset.add));
   });
   bindModeToggle();
+
+  // rede de seguranca final: garante que a ultima versao fique no navegador
+  // mesmo se a aba for fechada antes do autosave (1.5s) disparar.
+  window.addEventListener('beforeunload', () => {
+    window.DataStore.localSave(state);
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

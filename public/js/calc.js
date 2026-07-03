@@ -3,6 +3,7 @@
 // Nenhuma funcao aqui toca o DOM ou o Supabase, so numeros -> facil de testar.
 // ============================================================================
 
+(function () {
 /** true se o valor pode ser tratado como numero "preenchido" (nao vazio, nao NaN) */
 function isNum(v) {
   return v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v));
@@ -181,3 +182,4 @@ window.KpiCalc = {
   kpi6Text,
   trend,
 };
+})();
