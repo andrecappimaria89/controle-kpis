@@ -36,16 +36,21 @@ const DEFAULT_KPI_CONFIG = {
     description: 'Percentual de bugs resolvidos comparado com os itens em aberto no trimestre, com indicação de backlog.',
     type: 'Trimestral',
   },
+  kpi7: {
+    title: 'Taxa Automação Homologadas',
+    description: 'Percentual de cenários automatizados homologados (validados e funcionando) em relação ao total realizado no último mês.',
+    type: 'Mensal',
+  },
 };
 
 // Dados de exemplo, iguais aos da planilha original, usados apenas na primeira carga.
 function defaultAutomationRows() {
   return [
-    { month: 'Mar', planned: 30, realized: 10 },
-    { month: 'Abr', planned: 32, realized: 15 },
-    { month: 'Mai', planned: 35, realized: 16 },
-    { month: 'Jun', planned: '', realized: '' },
-    { month: 'Jul', planned: '', realized: '' },
+    { month: 'Mar', planned: 30, realized: 10, homologated: 8 },
+    { month: 'Abr', planned: 32, realized: 15, homologated: 11 },
+    { month: 'Mai', planned: 35, realized: 16, homologated: 13 },
+    { month: 'Jun', planned: '', realized: '', homologated: '' },
+    { month: 'Jul', planned: '', realized: '', homologated: '' },
   ];
 }
 
@@ -81,7 +86,7 @@ function buildDefaultState() {
 // ------------------------------- ESTADO GLOBAL ------------------------------
 let state = buildDefaultState();
 let areaIdByName = {}; // preenchido quando o Supabase esta configurado
-let charts = { automation: null, bugs: null };
+let charts = { automation: null, bugs: null, homologation: null };
 
 // -------------------------------- HELPERS ------------------------------------
 const { toNum, isNum } = window.KpiCalc;
@@ -159,7 +164,7 @@ function hydrateStateFromSupabase(remote) {
     const areaId = areaIdByName[name];
     const autoRows = automation
       .filter((r) => r.area_id === areaId)
-      .map((r) => ({ month: r.month, planned: r.planned ?? '', realized: r.realized ?? '' }));
+      .map((r) => ({ month: r.month, planned: r.planned ?? '', realized: r.realized ?? '', homologated: r.homologated ?? '' }));
     const bugRows = bugs
       .filter((r) => r.area_id === areaId)
       .map((r) => ({ month: r.month, opened: r.opened ?? '', resolved: r.resolved ?? '' }));
@@ -279,11 +284,14 @@ function renderSummary() {
   const totalResolved = bugs.reduce((a, r) => a + (toNum(r.resolved) || 0), 0);
   const backlog = totalOpened - totalResolved;
   const overallPct = totalPlanned ? totalRealized / totalPlanned : 0;
+  const homolog = window.KpiCalc.aggregateHomologation(automation);
 
   const cards = [
     { label: 'Total Planejado', value: formatInt(totalPlanned), dot: 'dot-blue' },
     { label: 'Total Realizado', value: formatInt(totalRealized), dot: 'dot-green' },
     { label: '% Geral Automatizado', value: formatPercent(overallPct), dot: 'dot-blue' },
+    { label: 'Automações Homologadas', value: formatInt(homolog.totalHomologated), dot: 'dot-green' },
+    { label: 'Taxa de Efetividade', value: formatPercent(homolog.rate), dot: 'dot-green' },
     { label: 'Bugs Abertos', value: formatInt(totalOpened), dot: 'dot-orange' },
     { label: 'Bugs Resolvidos', value: formatInt(totalResolved), dot: 'dot-green' },
     { label: 'Backlog Atual', value: formatInt(backlog), dot: backlog > 0 ? 'dot-red' : 'dot-green' },
@@ -301,11 +309,35 @@ function renderSummary() {
 // ------------------------------- RENDER: CHARTS -------------------------------
 let chartLibRetries = 0;
 
+/** Plugin customizado: desenha o percentual no centro do doughnut (registrado uma unica vez) */
+const centerTextPlugin = {
+  id: 'centerText',
+  afterDraw(chart) {
+    const opts = chart.options.plugins && chart.options.plugins.centerText;
+    if (!opts || !opts.text) return;
+    const { ctx, chartArea } = chart;
+    const { left, right, top, bottom } = chartArea;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = "800 24px Manrope, Inter, sans-serif";
+    ctx.fillStyle = opts.color || '#131a2b';
+    ctx.fillText(opts.text, (left + right) / 2, (top + bottom) / 2 - 6);
+    if (opts.subtext) {
+      ctx.font = "600 11px Inter, sans-serif";
+      ctx.fillStyle = '#6b7385';
+      ctx.fillText(opts.subtext, (left + right) / 2, (top + bottom) / 2 + 14);
+    }
+    ctx.restore();
+  },
+};
+
 function renderCharts() {
   const { automation, bugs } = currentAreaData();
 
   const autoWrap = document.getElementById('automationChart').parentElement;
   const bugsWrap = document.getElementById('bugsChart').parentElement;
+  const homologWrap = document.getElementById('homologationChart').parentElement;
 
   if (!window.Chart) {
     // Biblioteca de graficos ainda nao carregou (rede lenta) ou foi bloqueada
@@ -323,20 +355,46 @@ function renderCharts() {
       </div>`;
     autoWrap.innerHTML = msg;
     bugsWrap.innerHTML = msg;
+    homologWrap.innerHTML = msg;
     return;
   }
 
   const autoCtx = document.getElementById('automationChart');
   const bugsCtx = document.getElementById('bugsChart');
-  if (!autoCtx || !bugsCtx) return; // canvas foi substituido pela mensagem de erro acima em uma tentativa anterior
+  const homologCtx = document.getElementById('homologationChart');
+  if (!autoCtx || !bugsCtx || !homologCtx) return; // canvas foi substituido pela mensagem de erro em uma tentativa anterior
 
   if (charts.automation) charts.automation.destroy();
   if (charts.bugs) charts.bugs.destroy();
+  if (charts.homologation) charts.homologation.destroy();
+
+  // registra os plugins (uma unica vez) se carregaram
+  if (window.ChartDataLabels && !window.__datalabelsRegistered) {
+    Chart.register(window.ChartDataLabels);
+    window.__datalabelsRegistered = true;
+  }
+  if (!window.__centerTextRegistered) {
+    Chart.register(centerTextPlugin);
+    window.__centerTextRegistered = true;
+  }
+
+  const dataLabelOptions = {
+    anchor: 'end',
+    align: 'top',
+    offset: 2,
+    color: '#374151',
+    font: { weight: '700', size: 11 },
+    formatter: (value) => formatInt(value),
+  };
 
   const commonOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
+    layout: { padding: { top: 18 } },
+    plugins: {
+      legend: { display: false },
+      datalabels: dataLabelOptions,
+    },
     scales: {
       x: { grid: { display: false } },
       y: { beginAtZero: true, grid: { color: '#eef0f6' } },
@@ -366,6 +424,54 @@ function renderCharts() {
     },
     options: commonOptions,
   });
+
+  // ------ Gráfico de pizza (doughnut): Taxa de Efetividade da Automação ------
+  const homolog = window.KpiCalc.aggregateHomologation(automation);
+  const naoHomologadas = Math.max(homolog.totalRealized - homolog.totalHomologated, 0);
+  const hasData = homolog.totalRealized > 0;
+
+  const pieValues = hasData ? [homolog.totalHomologated, naoHomologadas] : [1];
+  const pieColors = hasData ? ['#16a34a', '#f97316'] : ['#e6e9f2'];
+  const pieLabels = hasData ? ['Homologadas', 'Não Homologadas'] : ['Sem dados'];
+
+  charts.homologation = new Chart(homologCtx, {
+    type: 'doughnut',
+    data: {
+      labels: pieLabels,
+      datasets: [{
+        data: pieValues,
+        backgroundColor: pieColors,
+        borderWidth: 2,
+        borderColor: '#ffffff',
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '68%',
+      plugins: {
+        legend: {
+          display: hasData,
+          position: 'bottom',
+          labels: { boxWidth: 10, font: { size: 11 }, color: '#6b7385' },
+        },
+        datalabels: { display: false }, // evita duplicar com o texto central
+        tooltip: {
+          enabled: hasData,
+          callbacks: {
+            label: (ctx) => {
+              const total = homolog.totalHomologated + naoHomologadas;
+              const pct = total ? (ctx.parsed / total) * 100 : 0;
+              return ` ${ctx.label}: ${formatInt(ctx.parsed)} (${formatPercent(pct / 100)})`;
+            },
+          },
+        },
+        centerText: hasData
+          ? { text: formatPercent(homolog.rate), subtext: 'Efetividade', color: '#131a2b' }
+          : { text: '—', subtext: 'Sem dados', color: '#9aa1b2' },
+      },
+    },
+  });
 }
 
 // -------------------------------- RENDER: KPIs --------------------------------
@@ -380,13 +486,22 @@ function kpiCardShell(key, resultHtml, extraCls = '') {
   return `
     <div class="kpi-card ${extraCls}" data-kpi="${key}">
       <div class="kpi-top-row">
-        <textarea class="kpi-title-input" rows="1" data-kpi-field="title" data-kpi="${key}">${escapeHtml(cfg.title)}</textarea>
         <span class="kpi-type-badge">${escapeHtml(cfg.type)}</span>
       </div>
+      <textarea class="kpi-title-input" rows="2" data-kpi-field="title" data-kpi="${key}">${escapeHtml(cfg.title)}</textarea>
       <textarea class="kpi-desc-input" rows="2" data-kpi-field="description" data-kpi="${key}">${escapeHtml(cfg.description)}</textarea>
       ${resultHtml}
     </div>
   `;
+}
+
+/** Faixa de cor para KPIs de taxa (0-100%): 0-50% vermelho, 51-80% laranja, 81-100% verde. */
+function rateColorClass(rate) {
+  if (rate === null || rate === undefined || Number.isNaN(rate)) return '';
+  const pct = rate * 100;
+  if (pct <= 50) return 'rate-red';
+  if (pct <= 80) return 'rate-orange';
+  return 'rate-green';
 }
 
 function renderKpis() {
@@ -400,13 +515,14 @@ function renderKpis() {
   const kpi5 = C.kpi5MonthlyResolution(bugs);
   const kpi6 = C.kpi6QuarterlyResolution(bugs);
 
-  const blocks = [];
+  const automationBlocks = [];
+  const bugBlocks = [];
 
   // KPI 1
   {
     const t = trendArrow(kpi1);
     const cls = kpi1 === null ? '' : kpi1 >= 0 ? 'positive' : 'negative';
-    blocks.push(kpiCardShell('kpi1', `
+    automationBlocks.push(kpiCardShell('kpi1', `
       <div class="kpi-result-row">
         <span class="kpi-result-value">${formatPercent(kpi1, { signed: true })}</span>
         <span class="kpi-trend ${t.cls}">${t.symbol}</span>
@@ -418,7 +534,7 @@ function renderKpis() {
   {
     const cls = kpi2 === null ? '' : kpi2 >= 0.15 ? 'positive' : kpi2 < 0 ? 'negative' : '';
     const t = trendArrow(kpi2);
-    blocks.push(kpiCardShell('kpi2', `
+    automationBlocks.push(kpiCardShell('kpi2', `
       <div class="kpi-result-row">
         <span class="kpi-result-value">${formatPercent(kpi2, { signed: true })}</span>
         <span class="kpi-trend ${t.cls}">${t.symbol}</span>
@@ -431,7 +547,7 @@ function renderKpis() {
   {
     const t = trendArrow(kpi3);
     const cls = kpi3 === null ? '' : kpi3 >= 0 ? 'positive' : 'negative';
-    blocks.push(kpiCardShell('kpi3', `
+    automationBlocks.push(kpiCardShell('kpi3', `
       <div class="kpi-result-row">
         <span class="kpi-result-value">${formatPercent(kpi3, { signed: true })}</span>
         <span class="kpi-trend ${t.cls}">${t.symbol}</span>
@@ -443,7 +559,7 @@ function renderKpis() {
   {
     const t = trendArrow(kpi4);
     const cls = kpi4 === null ? '' : kpi4 >= 0 ? 'positive' : 'negative';
-    blocks.push(kpiCardShell('kpi4', `
+    automationBlocks.push(kpiCardShell('kpi4', `
       <div class="kpi-result-row">
         <span class="kpi-result-value">${formatPercent(kpi4, { signed: true })}</span>
         <span class="kpi-trend ${t.cls}">${t.symbol}</span>
@@ -452,37 +568,58 @@ function renderKpis() {
     `, cls));
   }
 
-  // KPI 5
+  // KPI 5 — taxa de solucao mensal: cor por faixa (0-50% vermelho / 51-80% laranja / 81-100% verde)
   {
-    const cls = kpi5 === null ? '' : kpi5 >= 0.8 ? 'positive' : kpi5 < 0.5 ? 'negative' : '';
-    blocks.push(kpiCardShell('kpi5', `
+    const cls = rateColorClass(kpi5);
+    bugBlocks.push(kpiCardShell('kpi5', `
       <div class="kpi-result-row">
         <span class="kpi-result-value">${formatPercent(kpi5)}</span>
       </div>
     `, cls));
   }
 
-  // KPI 6
+  // KPI 6 — taxa de solucao trimestral: mesma logica de faixa de cor
   {
-    const cls = !kpi6 ? '' : kpi6.backlog <= 0 ? 'positive' : 'negative';
-    blocks.push(kpiCardShell('kpi6', `
+    const cls = kpi6 ? rateColorClass(kpi6.rate) : '';
+    bugBlocks.push(kpiCardShell('kpi6', `
       <div class="kpi-result-row">
         <span class="kpi-result-value" style="font-size:19px;">${C.kpi6Text(kpi6, formatPercent)}</span>
       </div>
     `, cls));
   }
 
-  document.getElementById('kpiGrid').innerHTML = blocks.join('');
+  // KPI 7 — taxa de automacoes homologadas (mensal): mesma faixa de cor 0-50/51-80/81-100
+  {
+    const kpi7 = C.kpi7MonthlyHomologationRate(automation);
+    const cls = rateColorClass(kpi7);
+    automationBlocks.push(kpiCardShell('kpi7', `
+      <div class="kpi-result-row">
+        <span class="kpi-result-value">${formatPercent(kpi7)}</span>
+      </div>
+    `, cls));
+  }
+
+  document.getElementById('kpiGridAutomation').innerHTML = automationBlocks.join('');
+  document.getElementById('kpiGridBugs').innerHTML = bugBlocks.join('');
 
   // eventos de edicao de titulo/descricao (resultado nunca e editavel)
   document.querySelectorAll('[data-kpi-field]').forEach((el) => {
+    autoGrowTextarea(el);
+    el.disabled = state.mode !== 'edicao'; // so pode editar titulo/descricao no modo Edicao
     el.addEventListener('input', (e) => {
       const key = e.target.dataset.kpi;
       const field = e.target.dataset.kpiField;
       currentAreaData().kpis[key][field] = e.target.value;
+      autoGrowTextarea(e.target);
       scheduleAutosave();
     });
   });
+}
+
+/** Ajusta a altura do textarea ao conteudo, garantindo que o texto do titulo/descricao apareca por inteiro. */
+function autoGrowTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
 }
 
 // ------------------------------- RENDER: TABLES -------------------------------
@@ -496,6 +633,7 @@ function renderAutomationTable() {
         <td class="month-label">${r.month}</td>
         <td><input type="number" min="0" class="cell-input planned" data-table="automation" data-idx="${idx}" data-field="planned" value="${r.planned}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input realized" data-table="automation" data-idx="${idx}" data-field="realized" value="${r.realized}" placeholder="—" /></td>
+        <td><input type="number" min="0" class="cell-input homologated" data-table="automation" data-idx="${idx}" data-field="homologated" value="${r.homologated ?? ''}" placeholder="—" title="Não pode ser maior que Realizados" /></td>
         <td class="pct-readonly">${formatPercent(pct)}</td>
         <td><button class="row-delete" data-remove="automation" data-idx="${idx}" title="Remover mês">✕</button></td>
       </tr>
@@ -533,6 +671,16 @@ function bindTableEvents() {
         e.target.value = '0';
       } else {
         e.target.classList.remove('invalid');
+      }
+
+      if (table === 'automation' && field === 'homologated' && value !== '') {
+        const realized = window.KpiCalc.toNum(currentAreaData().automation[idx].realized) || 0;
+        if (Number(value) > realized) {
+          e.target.classList.add('invalid');
+          showToast('Automações Homologadas não pode ser maior que Realizados.', 'error');
+          value = String(realized);
+          e.target.value = value;
+        }
       }
 
       currentAreaData()[table][idx][field] = value;
@@ -573,7 +721,7 @@ function addMonth(table) {
   const areaData = currentAreaData();
   const month = nextMonth(areaData[table]);
   if (table === 'automation') {
-    areaData.automation.push({ month, planned: '', realized: '' });
+    areaData.automation.push({ month, planned: '', realized: '', homologated: '' });
   } else {
     areaData.bugs.push({ month, opened: '', resolved: '' });
   }
@@ -588,10 +736,11 @@ function exportCsv() {
   lines.push(`Área;${state.currentArea}`);
   lines.push('');
   lines.push('Volumetria de Testes Automatizados');
-  lines.push('Mês;Planejados;Realizados;Percentual');
+  lines.push('Mês;Planejados;Realizados;Automações Homologadas;Percentual;Taxa de Homologação');
   automation.forEach((r) => {
     const pct = window.KpiCalc.automationPercentage(r.planned, r.realized);
-    lines.push(`${r.month};${r.planned};${r.realized};${formatPercent(pct)}`);
+    const homologRate = window.KpiCalc.homologationRate(r.realized, r.homologated);
+    lines.push(`${r.month};${r.planned};${r.realized};${r.homologated ?? ''};${formatPercent(pct)};${formatPercent(homologRate)}`);
   });
   lines.push('');
   lines.push('Volumetria de Abertura de Bugs');
@@ -632,6 +781,7 @@ function bindModeToggle() {
         b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
       });
       document.body.className = `mode-${state.mode}`;
+      renderKpis(); // aplica/remove o bloqueio de edicao de titulo/descricao
     });
   });
 }

@@ -35,13 +35,42 @@ function resolutionRate(opened, resolved) {
   return r / o;
 }
 
-/** Retorna somente as linhas cujo campo "realized" (e opcionalmente "planned") esta preenchido */
+/** Tabela 1 (nova coluna): Taxa de Homologacao = Automacoes Homologadas / Realizados */
+function homologationRate(realized, homologated) {
+  const r = toNum(realized);
+  const h = toNum(homologated);
+  if (!r) return 0; // sem realizados -> evita divisao por zero
+  if (h === null) return 0;
+  return Math.min(h / r, 1); // nunca pode passar de 100%
+}
+
+/** Retorna somente as linhas cujo campo "realized" esta preenchido (usado tambem para homologacao) */
 function filledAutomationRows(rows, requirePlanned = false) {
   return rows.filter((r) => isNum(r.realized) && (!requirePlanned || isNum(r.planned)));
 }
 
 function filledBugRows(rows) {
   return rows.filter((r) => isNum(r.opened) || isNum(r.resolved));
+}
+
+// ---------------------------------------------------------------------------
+// KPI 7 - Taxa Automacao Homologadas (mensal)
+// Automacoes Homologadas / Realizados do ultimo mes preenchido
+// ---------------------------------------------------------------------------
+function kpi7MonthlyHomologationRate(automationRows) {
+  const filled = filledAutomationRows(automationRows);
+  if (filled.length === 0) return null;
+  const last = filled[filled.length - 1];
+  return homologationRate(last.realized, last.homologated);
+}
+
+/** Agregado (todos os meses preenchidos) para o card de resumo e o grafico de pizza */
+function aggregateHomologation(automationRows) {
+  const filled = filledAutomationRows(automationRows);
+  const totalRealized = filled.reduce((acc, r) => acc + (toNum(r.realized) || 0), 0);
+  const totalHomologated = filled.reduce((acc, r) => acc + (toNum(r.homologated) || 0), 0);
+  const rate = totalRealized ? Math.min(totalHomologated / totalRealized, 1) : 0;
+  return { totalRealized, totalHomologated, rate };
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +199,7 @@ window.KpiCalc = {
   toNum,
   automationPercentage,
   resolutionRate,
+  homologationRate,
   filledAutomationRows,
   filledBugRows,
   kpi1MonthlyGrowth,
@@ -180,6 +210,8 @@ window.KpiCalc = {
   kpi5MonthlyResolution,
   kpi6QuarterlyResolution,
   kpi6Text,
+  kpi7MonthlyHomologationRate,
+  aggregateHomologation,
   trend,
 };
 })();

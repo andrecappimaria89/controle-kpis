@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Controle de KPIs Automatizados</title>
+<title>KPIs Área de Qualidade</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Ctext x='16' y='22' font-family='Arial' font-weight='bold' font-size='13' fill='white' text-anchor='middle'%3EKPI%3C/text%3E%3C/svg%3E" />
 <meta name="description" content="Dashboard de gestão de KPIs de automação de testes e bugs" />
 
@@ -21,7 +21,7 @@
     <div class="brand">
       <span class="brand-mark">KPI</span>
       <div class="brand-text">
-        <h1>Controle de KPIs Automatizados</h1>
+        <h1>KPIs Área de Qualidade</h1>
         <p id="connectionStatus" class="connection-status">verificando conexão…</p>
       </div>
     </div>
@@ -41,6 +41,7 @@
 <main>
 
   <!-- ======================= RESUMO GERAL ======================= -->
+  <h2 class="section-title">Valor Acumulado</h2>
   <section class="summary-grid" id="summaryGrid" aria-label="Resumo geral da área"></section>
 
   <!-- ======================= DASHBOARDS ======================= -->
@@ -51,6 +52,13 @@
         <span class="legend"><i class="dot dot-blue"></i>Planejados <i class="dot dot-green"></i>Realizados</span>
       </div>
       <div class="chart-wrap"><canvas id="automationChart"></canvas></div>
+    </div>
+    <div class="chart-card chart-card-narrow">
+      <div class="chart-card-head">
+        <h2>Taxa de Efetividade da Automação</h2>
+        <span class="legend"><i class="dot dot-green"></i>Homologadas <i class="dot dot-orange"></i>Não Homologadas</span>
+      </div>
+      <div class="chart-wrap"><canvas id="homologationChart"></canvas></div>
     </div>
     <div class="chart-card">
       <div class="chart-card-head">
@@ -64,7 +72,18 @@
   <!-- ======================= KPIs ======================= -->
   <section class="kpi-section">
     <h2 class="section-title">Indicadores (KPIs)</h2>
-    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="kpi-panels">
+      <div class="kpi-panel">
+        <h3 class="kpi-subtitle">KPIs Automação</h3>
+        <div class="kpi-grid kpi-grid-automation" id="kpiGridAutomation"></div>
+      </div>
+
+      <div class="kpi-panel">
+        <h3 class="kpi-subtitle">KPIs Volumetria Bugs</h3>
+        <div class="kpi-grid kpi-grid-bugs" id="kpiGridBugs"></div>
+      </div>
+    </div>
   </section>
 
   <!-- ======================= TABELAS DE ENTRADA (modo edição) ======================= -->
@@ -85,7 +104,7 @@
       <div class="table-scroll">
         <table id="automationTable" class="data-table">
           <thead>
-            <tr><th>Mês</th><th>Planejados</th><th>Realizados</th><th>%</th><th></th></tr>
+            <tr><th>Mês</th><th>Planejados</th><th>Realizados</th><th>Automações Homologadas</th><th>%</th><th></th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -115,6 +134,7 @@
 <!-- ======================= SCRIPTS ======================= -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2" defer></script>
 <script src="js/config.js" defer></script>
 <script src="js/calc.js" defer></script>
 <script src="js/supabaseClient.js" defer></script>

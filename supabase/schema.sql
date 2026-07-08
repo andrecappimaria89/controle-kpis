@@ -22,6 +22,8 @@ create table if not exists automation_metrics (
   planned    numeric,                       -- Planejados (pode ficar vazio)
   realized   numeric,                       -- Realizados (pode ficar vazio)
   percentage numeric,                       -- Realizados / Planejados (calculado no front-end)
+  homologated numeric,                      -- Automações Homologadas (validadas e funcionando)
+  homologation_rate numeric,                -- Homologadas / Realizados (calculado no front-end)
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (area_id, month)
@@ -98,7 +100,10 @@ cross join (
      'Mensal'),
     ('kpi6', 'Taxa de Solução Trimestral de Bugs',
      'Percentual de bugs resolvidos comparado com os itens em aberto no trimestre, com indicação de backlog.',
-     'Trimestral')
+     'Trimestral'),
+    ('kpi7', 'Taxa Automação Homologadas',
+     'Percentual de cenários automatizados homologados (validados e funcionando) em relação ao total realizado no último mês.',
+     'Mensal')
 ) as k(kpi_key, title, description, kpi_type)
 on conflict (area_id, kpi_key) do nothing;
 

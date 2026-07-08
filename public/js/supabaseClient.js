@@ -79,6 +79,8 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, kpiConfig
     planned: r.planned === '' ? null : r.planned,
     realized: r.realized === '' ? null : r.realized,
     percentage: window.KpiCalc.automationPercentage(r.planned, r.realized),
+    homologated: r.homologated === '' || r.homologated === undefined ? null : r.homologated,
+    homologation_rate: window.KpiCalc.homologationRate(r.realized, r.homologated),
   }));
 
   const bugPayload = bugRows.map((r, idx) => ({
