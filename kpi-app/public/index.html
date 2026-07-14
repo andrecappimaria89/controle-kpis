@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KPIs Área de Qualidade</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Ctext x='16' y='22' font-family='Arial' font-weight='bold' font-size='13' fill='white' text-anchor='middle'%3EKPI%3C/text%3E%3C/svg%3E" />
+<meta name="description" content="Dashboard de gestão de KPIs de automação de testes e bugs" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ======================= HEADER ======================= -->
+<header class="app-header">
+  <div class="header-top">
+    <div class="brand">
+      <span class="brand-mark">KPI</span>
+      <div class="brand-text">
+        <h1>KPIs Área de Qualidade</h1>
+        <p id="connectionStatus" class="connection-status">verificando conexão…</p>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="page-toggle" role="tablist" aria-label="Tela">
+        <button class="page-btn active" data-page="dashboard" role="tab" aria-selected="true">Dashboard</button>
+        <button class="page-btn" data-page="cadastro" role="tab" aria-selected="false">Cadastro de Informações</button>
+      </div>
+      <button id="saveBtn" class="btn btn-primary">Salvar alterações</button>
+    </div>
+  </div>
+
+  <nav class="area-tabs" id="areaTabs" aria-label="Áreas"></nav>
+</header>
+
+<main>
+
+  <!-- ======================= PÁGINA: DASHBOARD ======================= -->
+  <div id="pageDashboard">
+
+    <!-- ======================= RESUMO GERAL ======================= -->
+    <h2 class="section-title">Valor Acumulado</h2>
+    <section class="summary-grid" id="summaryGrid" aria-label="Resumo geral da área"></section>
+
+    <!-- ======================= DASHBOARDS ======================= -->
+    <section class="dashboards">
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <h2>Volumetria de Testes Automatizados</h2>
+          <span class="legend"><i class="dot dot-blue"></i>Planejados <i class="dot dot-green"></i>Realizados</span>
+        </div>
+        <div class="chart-wrap"><canvas id="automationChart"></canvas></div>
+      </div>
+      <div class="chart-card chart-card-narrow">
+        <div class="chart-card-head">
+          <h2>Taxa de Efetividade da Automação</h2>
+          <span class="legend"><i class="dot dot-green"></i>Homologadas <i class="dot dot-orange"></i>Não Homologadas</span>
+        </div>
+        <div class="chart-wrap"><canvas id="homologationChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <h2>Volumetria de Bugs</h2>
+          <span class="legend"><i class="dot dot-orange"></i>Abertos <i class="dot dot-green"></i>Resolvidos</span>
+        </div>
+        <div class="chart-wrap"><canvas id="bugsChart"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ======================= KPIs ======================= -->
+    <section class="kpi-section">
+      <h2 class="section-title">Indicadores (KPIs)</h2>
+
+      <div class="kpi-panels">
+        <div class="kpi-panel">
+          <h3 class="kpi-subtitle">KPIs Automação</h3>
+          <div class="kpi-grid kpi-grid-automation" id="kpiGridAutomation"></div>
+        </div>
+
+        <div class="kpi-panel">
+          <h3 class="kpi-subtitle">KPIs Volumetria Bugs</h3>
+          <div class="kpi-grid kpi-grid-bugs" id="kpiGridBugs"></div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ======================= PÁGINA: CADASTRO DE INFORMAÇÕES ======================= -->
+  <div id="pageCadastro" style="display:none;">
+    <section class="tables-section" id="tablesSection">
+      <div class="tables-toolbar">
+        <h2 class="section-title">Cadastro de Informações</h2>
+        <div class="toolbar-actions">
+          <button id="duplicateBtn" class="btn btn-ghost">Duplicar estrutura p/ todas as áreas</button>
+          <button id="exportCsvBtn" class="btn btn-ghost">Exportar CSV</button>
+        </div>
+      </div>
+      <p class="page-hint">Selecione a squad nas abas acima para ver/editar os dados daquela área.</p>
+
+      <div class="table-card">
+        <div class="table-card-head">
+          <h3>Tabela 1 — Volumetria de Testes Automatizados</h3>
+          <button class="btn btn-add" data-add="automation">+ Adicionar mês</button>
+        </div>
+        <div class="table-scroll">
+          <table id="automationTable" class="data-table">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th>Fluxo</th>
+                <th>Planejados</th>
+                <th>Realizados</th>
+                <th>Automações Homologadas</th>
+                <th>Automações a Analisar</th>
+                <th>%</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-card-head">
+          <h3>Tabela 2 — Volumetria de Abertura de Bugs</h3>
+          <button class="btn btn-add" data-add="bugs">+ Adicionar mês</button>
+        </div>
+        <div class="table-scroll">
+          <table id="bugsTable" class="data-table">
+            <thead>
+              <tr><th>Mês</th><th>Abertos</th><th>Resolvidos</th><th>Índice de Resolução</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<!-- ======================= SCRIPTS ======================= -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2" defer></script>
+<script src="js/config.js" defer></script>
+<script src="js/calc.js" defer></script>
+<script src="js/supabaseClient.js" defer></script>
+<script src="js/app.js" defer></script>
+</body>
+</html>
