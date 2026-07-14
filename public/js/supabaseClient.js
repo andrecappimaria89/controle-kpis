@@ -76,11 +76,13 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, kpiConfig
     area_id: areaId,
     month: r.month,
     month_order: idx,
+    flow: r.flow === '' || r.flow === undefined ? null : r.flow,
     planned: r.planned === '' ? null : r.planned,
     realized: r.realized === '' ? null : r.realized,
     percentage: window.KpiCalc.automationPercentage(r.planned, r.realized),
     homologated: r.homologated === '' || r.homologated === undefined ? null : r.homologated,
     homologation_rate: window.KpiCalc.homologationRate(r.realized, r.homologated),
+    to_analyze: r.toAnalyze === '' || r.toAnalyze === undefined ? null : r.toAnalyze,
   }));
 
   const bugPayload = bugRows.map((r, idx) => ({

@@ -99,13 +99,13 @@ button {
 
 .header-actions { display: flex; align-items: center; gap: 14px; }
 
-.mode-toggle {
+.page-toggle {
   display: flex;
   background: rgba(255,255,255,0.08);
   border-radius: 999px;
   padding: 3px;
 }
-.mode-btn {
+.page-btn {
   border: none;
   background: transparent;
   color: #c7d2e6;
@@ -114,8 +114,9 @@ button {
   padding: 7px 16px;
   border-radius: 999px;
   transition: all .15s ease;
+  white-space: nowrap;
 }
-.mode-btn.active { background: #fff; color: #0f172a; }
+.page-btn.active { background: #fff; color: #0f172a; }
 
 .btn {
   border: none;
@@ -439,6 +440,12 @@ main {
 .cell-input.opened { color: var(--orange); }
 .cell-input.resolved { color: var(--green); }
 .cell-input.homologated { color: var(--green); font-weight: 700; }
+.cell-input.to-analyze { color: var(--blue); }
+.cell-input.flow {
+  width: 150px;
+  font-family: var(--font-body);
+  color: var(--text);
+}
 
 .month-label { font-weight: 700; }
 .pct-readonly { font-family: var(--font-mono); font-weight: 700; color: var(--text-muted); }
@@ -477,7 +484,11 @@ main {
 .toast.error { border-left: 4px solid var(--red); }
 
 /* ------------------------------ EXECUTIVE MODE ---------------------------- */
-body.mode-executivo .tables-section { display: none; }
+.page-hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: -6px 0 16px;
+}
 
 /* --------------------------------- RESPONSIVE ------------------------------ */
 @media (max-width: 1100px) {

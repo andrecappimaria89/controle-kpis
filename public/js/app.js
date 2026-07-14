@@ -11,30 +11,15 @@ const DEFAULT_KPI_CONFIG = {
     description: 'Percentual de testes automatizados realizados, com meta de crescimento contínuo de 1 ponto percentual ao mês.',
     type: 'Mensal',
   },
-  kpi2: {
-    title: 'Crescimento Trimestral da Automação',
-    description: 'Percentual de testes automatizados em relação ao volume realizado no trimestre, com meta de crescimento de 15%.',
-    type: 'Trimestral',
-  },
   kpi3: {
     title: 'Eficiência vs Planejamento Mensal',
     description: 'Compara a variação percentual do volume realizado com a variação percentual do volume planejado no mês.',
     type: 'Mensal',
   },
-  kpi4: {
-    title: 'Eficiência vs Planejamento Trimestral',
-    description: 'Compara a variação percentual do volume realizado com a variação percentual do volume planejado no trimestre.',
-    type: 'Trimestral',
-  },
   kpi5: {
     title: 'Taxa de Solução Mensal de Bugs',
     description: 'Percentual de bugs resolvidos comparado com os itens em aberto no último mês.',
     type: 'Mensal',
-  },
-  kpi6: {
-    title: 'Taxa de Solução Trimestral de Bugs',
-    description: 'Percentual de bugs resolvidos comparado com os itens em aberto no trimestre, com indicação de backlog.',
-    type: 'Trimestral',
   },
   kpi7: {
     title: 'Taxa Automação Homologadas',
@@ -46,11 +31,11 @@ const DEFAULT_KPI_CONFIG = {
 // Dados de exemplo, iguais aos da planilha original, usados apenas na primeira carga.
 function defaultAutomationRows() {
   return [
-    { month: 'Mar', planned: 30, realized: 10, homologated: 8 },
-    { month: 'Abr', planned: 32, realized: 15, homologated: 11 },
-    { month: 'Mai', planned: 35, realized: 16, homologated: 13 },
-    { month: 'Jun', planned: '', realized: '', homologated: '' },
-    { month: 'Jul', planned: '', realized: '', homologated: '' },
+    { month: 'Mar', flow: 'Login', planned: 30, realized: 10, homologated: 8, toAnalyze: 2 },
+    { month: 'Abr', flow: 'Checkout', planned: 32, realized: 15, homologated: 11, toAnalyze: 3 },
+    { month: 'Mai', flow: 'Pagamento', planned: 35, realized: 16, homologated: 13, toAnalyze: 1 },
+    { month: 'Jun', flow: '', planned: '', realized: '', homologated: '', toAnalyze: '' },
+    { month: 'Jul', flow: '', planned: '', realized: '', homologated: '', toAnalyze: '' },
   ];
 }
 
@@ -80,7 +65,7 @@ function buildDefaultState() {
       kpis: JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG)),
     };
   });
-  return { currentArea: 'DIRECT', mode: 'edicao', data };
+  return { currentArea: 'DIRECT', page: 'dashboard', data };
 }
 
 // ------------------------------- ESTADO GLOBAL ------------------------------
@@ -164,14 +149,22 @@ function hydrateStateFromSupabase(remote) {
     const areaId = areaIdByName[name];
     const autoRows = automation
       .filter((r) => r.area_id === areaId)
-      .map((r) => ({ month: r.month, planned: r.planned ?? '', realized: r.realized ?? '', homologated: r.homologated ?? '' }));
+      .map((r) => ({
+        month: r.month,
+        flow: r.flow ?? '',
+        planned: r.planned ?? '',
+        realized: r.realized ?? '',
+        homologated: r.homologated ?? '',
+        toAnalyze: r.to_analyze ?? '',
+      }));
     const bugRows = bugs
       .filter((r) => r.area_id === areaId)
       .map((r) => ({ month: r.month, opened: r.opened ?? '', resolved: r.resolved ?? '' }));
 
     const kpis = JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG));
     kpiConfigs
-      .filter((k) => k.area_id === areaId)
+      // ignora KPIs trimestrais que possam ter ficado salvos no banco de uma versao anterior
+      .filter((k) => k.area_id === areaId && DEFAULT_KPI_CONFIG[k.kpi_key])
       .forEach((k) => {
         kpis[k.kpi_key] = { title: k.title, description: k.description, type: k.kpi_type };
       });
@@ -183,7 +176,7 @@ function hydrateStateFromSupabase(remote) {
     };
   });
 
-  state = { currentArea: state.currentArea || 'DIRECT', mode: state.mode || 'edicao', data };
+  state = { currentArea: state.currentArea || 'DIRECT', page: state.page || 'dashboard', data };
 }
 
 let autosaveTimer = null;
@@ -509,11 +502,8 @@ function renderKpis() {
   const C = window.KpiCalc;
 
   const kpi1 = C.kpi1MonthlyGrowth(automation);
-  const kpi2 = C.kpi2QuarterlyGrowth(automation);
   const kpi3 = C.kpi3MonthlyEfficiency(automation);
-  const kpi4 = C.kpi4QuarterlyEfficiency(automation);
   const kpi5 = C.kpi5MonthlyResolution(bugs);
-  const kpi6 = C.kpi6QuarterlyResolution(bugs);
 
   const automationBlocks = [];
   const bugBlocks = [];
@@ -530,19 +520,6 @@ function renderKpis() {
     `, cls));
   }
 
-  // KPI 2
-  {
-    const cls = kpi2 === null ? '' : kpi2 >= 0.15 ? 'positive' : kpi2 < 0 ? 'negative' : '';
-    const t = trendArrow(kpi2);
-    automationBlocks.push(kpiCardShell('kpi2', `
-      <div class="kpi-result-row">
-        <span class="kpi-result-value">${formatPercent(kpi2, { signed: true })}</span>
-        <span class="kpi-trend ${t.cls}">${t.symbol}</span>
-      </div>
-      <div class="kpi-phrase">Meta: 15% de crescimento no trimestre</div>
-    `, cls));
-  }
-
   // KPI 3
   {
     const t = trendArrow(kpi3);
@@ -555,35 +532,12 @@ function renderKpis() {
     `, cls));
   }
 
-  // KPI 4
-  {
-    const t = trendArrow(kpi4);
-    const cls = kpi4 === null ? '' : kpi4 >= 0 ? 'positive' : 'negative';
-    automationBlocks.push(kpiCardShell('kpi4', `
-      <div class="kpi-result-row">
-        <span class="kpi-result-value">${formatPercent(kpi4, { signed: true })}</span>
-        <span class="kpi-trend ${t.cls}">${t.symbol}</span>
-      </div>
-      <div class="kpi-phrase">${C.kpi4Phrase(kpi4)}</div>
-    `, cls));
-  }
-
   // KPI 5 — taxa de solucao mensal: cor por faixa (0-50% vermelho / 51-80% laranja / 81-100% verde)
   {
     const cls = rateColorClass(kpi5);
     bugBlocks.push(kpiCardShell('kpi5', `
       <div class="kpi-result-row">
         <span class="kpi-result-value">${formatPercent(kpi5)}</span>
-      </div>
-    `, cls));
-  }
-
-  // KPI 6 — taxa de solucao trimestral: mesma logica de faixa de cor
-  {
-    const cls = kpi6 ? rateColorClass(kpi6.rate) : '';
-    bugBlocks.push(kpiCardShell('kpi6', `
-      <div class="kpi-result-row">
-        <span class="kpi-result-value" style="font-size:19px;">${C.kpi6Text(kpi6, formatPercent)}</span>
       </div>
     `, cls));
   }
@@ -605,7 +559,6 @@ function renderKpis() {
   // eventos de edicao de titulo/descricao (resultado nunca e editavel)
   document.querySelectorAll('[data-kpi-field]').forEach((el) => {
     autoGrowTextarea(el);
-    el.disabled = state.mode !== 'edicao'; // so pode editar titulo/descricao no modo Edicao
     el.addEventListener('input', (e) => {
       const key = e.target.dataset.kpi;
       const field = e.target.dataset.kpiField;
@@ -631,9 +584,11 @@ function renderAutomationTable() {
     return `
       <tr data-idx="${idx}">
         <td class="month-label">${r.month}</td>
+        <td><input type="text" maxlength="60" class="cell-input flow" data-table="automation" data-idx="${idx}" data-field="flow" value="${escapeHtml(r.flow ?? '')}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input planned" data-table="automation" data-idx="${idx}" data-field="planned" value="${r.planned}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input realized" data-table="automation" data-idx="${idx}" data-field="realized" value="${r.realized}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input homologated" data-table="automation" data-idx="${idx}" data-field="homologated" value="${r.homologated ?? ''}" placeholder="—" title="Não pode ser maior que Realizados" /></td>
+        <td><input type="number" min="0" class="cell-input to-analyze" data-table="automation" data-idx="${idx}" data-field="toAnalyze" value="${r.toAnalyze ?? ''}" placeholder="—" /></td>
         <td class="pct-readonly">${formatPercent(pct)}</td>
         <td><button class="row-delete" data-remove="automation" data-idx="${idx}" title="Remover mês">✕</button></td>
       </tr>
@@ -664,7 +619,7 @@ function bindTableEvents() {
       const { table, idx, field } = e.target.dataset;
       let value = e.target.value;
 
-      if (value !== '' && Number(value) < 0) {
+      if (field !== 'flow' && value !== '' && Number(value) < 0) {
         e.target.classList.add('invalid');
         showToast('Não é permitido usar números negativos.', 'error');
         value = '0';
@@ -721,7 +676,7 @@ function addMonth(table) {
   const areaData = currentAreaData();
   const month = nextMonth(areaData[table]);
   if (table === 'automation') {
-    areaData.automation.push({ month, planned: '', realized: '', homologated: '' });
+    areaData.automation.push({ month, flow: '', planned: '', realized: '', homologated: '', toAnalyze: '' });
   } else {
     areaData.bugs.push({ month, opened: '', resolved: '' });
   }
@@ -736,11 +691,11 @@ function exportCsv() {
   lines.push(`Área;${state.currentArea}`);
   lines.push('');
   lines.push('Volumetria de Testes Automatizados');
-  lines.push('Mês;Planejados;Realizados;Automações Homologadas;Percentual;Taxa de Homologação');
+  lines.push('Mês;Fluxo;Planejados;Realizados;Automações Homologadas;Automações a Analisar;Percentual;Taxa de Homologação');
   automation.forEach((r) => {
     const pct = window.KpiCalc.automationPercentage(r.planned, r.realized);
     const homologRate = window.KpiCalc.homologationRate(r.realized, r.homologated);
-    lines.push(`${r.month};${r.planned};${r.realized};${r.homologated ?? ''};${formatPercent(pct)};${formatPercent(homologRate)}`);
+    lines.push(`${r.month};${r.flow ?? ''};${r.planned};${r.realized};${r.homologated ?? ''};${r.toAnalyze ?? ''};${formatPercent(pct)};${formatPercent(homologRate)}`);
   });
   lines.push('');
   lines.push('Volumetria de Abertura de Bugs');
@@ -772,16 +727,17 @@ function duplicateStructureToAllAreas() {
 }
 
 // ----------------------------------- MODE --------------------------------------
-function bindModeToggle() {
-  document.querySelectorAll('.mode-btn').forEach((btn) => {
+function bindPageToggle() {
+  document.querySelectorAll('.page-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.mode = btn.dataset.mode;
-      document.querySelectorAll('.mode-btn').forEach((b) => {
+      state.page = btn.dataset.page;
+      document.querySelectorAll('.page-btn').forEach((b) => {
         b.classList.toggle('active', b === btn);
         b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
       });
-      document.body.className = `mode-${state.mode}`;
-      renderKpis(); // aplica/remove o bloqueio de edicao de titulo/descricao
+      document.getElementById('pageDashboard').style.display = state.page === 'dashboard' ? '' : 'none';
+      document.getElementById('pageCadastro').style.display = state.page === 'cadastro' ? '' : 'none';
+      if (state.page === 'dashboard') renderCharts(); // recria os graficos com o tamanho correto ao reexibir
     });
   });
 }
@@ -789,7 +745,7 @@ function bindModeToggle() {
 // ---------------------------------- RENDER ALL ----------------------------------
 function renderAll() {
   renderSummary();
-  renderCharts();
+  if (state.page === 'dashboard') renderCharts();
   renderKpis();
   renderAutomationTable();
   renderBugsTable();
@@ -801,6 +757,16 @@ async function init() {
   renderAreaTabs();
   await loadInitialData();
   renderAreaTabs();
+
+  // aplica a tela inicial (Dashboard ou Cadastro) de acordo com o estado carregado
+  document.querySelectorAll('.page-btn').forEach((b) => {
+    const active = b.dataset.page === state.page;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.getElementById('pageDashboard').style.display = state.page === 'dashboard' ? '' : 'none';
+  document.getElementById('pageCadastro').style.display = state.page === 'cadastro' ? '' : 'none';
+
   renderAll();
 
   document.getElementById('saveBtn').addEventListener('click', persistState);
@@ -809,7 +775,7 @@ async function init() {
   document.querySelectorAll('[data-add]').forEach((btn) => {
     btn.addEventListener('click', () => addMonth(btn.dataset.add));
   });
-  bindModeToggle();
+  bindPageToggle();
 
   // rede de seguranca final: garante que a ultima versao fique no navegador
   // mesmo se a aba for fechada antes do autosave (1.5s) disparar.
