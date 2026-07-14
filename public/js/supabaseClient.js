@@ -75,7 +75,7 @@ async function fetchAllData() {
  * na tela (ex: usuário excluiu um mês). Assim nunca existe um instante em
  * que a área fique com zero linhas no banco por causa de uma queda de rede.
  */
-async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows, kpiConfigs) {
+async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows, cycleTime, kpiConfigs) {
   if (!supabaseClient) throw new Error('Supabase nao configurado');
 
   const automationPayload = automationRows.map((r, idx) => ({
@@ -157,6 +157,13 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows
     (async () => {
       if (!kpiPayload.length) return;
       const { error } = await supabaseClient.from('kpi_configs').upsert(kpiPayload, { onConflict: 'area_id,kpi_key' });
+      if (error) throw error;
+    })(),
+    (async () => {
+      const { error } = await supabaseClient
+        .from('areas')
+        .update({ cycle_time: cycleTime === '' || cycleTime === undefined ? null : cycleTime })
+        .eq('id', areaId);
       if (error) throw error;
     })(),
   ]);

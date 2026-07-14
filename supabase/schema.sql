@@ -6,7 +6,8 @@
 -- 1. AREAS -------------------------------------------------------------------
 create table if not exists areas (
   id   uuid primary key default gen_random_uuid(),
-  name text not null unique
+  name text not null unique,
+  cycle_time numeric                         -- Cycle Time (dias) - valor editavel, nao calculado
 );
 
 insert into areas (name)

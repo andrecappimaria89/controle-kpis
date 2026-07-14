@@ -253,6 +253,24 @@ main {
   font-weight: 800;
   margin-top: 4px;
 }
+.metric-value-input {
+  display: block;
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  margin: 4px -4px 0;
+  padding: 0 4px;
+  color: var(--text);
+  border-radius: var(--radius-sm);
+}
+.metric-value-input:hover, .metric-value-input:focus {
+  border-color: var(--border);
+  background: var(--surface);
+  outline: none;
+}
 .metric-caption {
   font-size: 11px;
   color: var(--text-faint);

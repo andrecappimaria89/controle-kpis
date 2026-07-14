@@ -82,6 +82,22 @@ function aggregateSquad(squadRows) {
   return { totalPlanned, totalDelivered, rate };
 }
 
+/** Soma de Pontos Entregues nas ultimas N sprints preenchidas (padrao: 2) */
+function lastSprintsDelivered(squadRows, n = 2) {
+  const filled = (squadRows || []).filter((r) => isNum(r.pointsPlanned) || isNum(r.pointsDelivered));
+  const lastN = filled.slice(Math.max(0, filled.length - n));
+  return lastN.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
+}
+
+/** Velocity: media de pontos entregues nas ultimas N sprints preenchidas (padrao: 2) */
+function velocity(squadRows, n = 2) {
+  const filled = (squadRows || []).filter((r) => isNum(r.pointsPlanned) || isNum(r.pointsDelivered));
+  const lastN = filled.slice(Math.max(0, filled.length - n));
+  if (!lastN.length) return null;
+  const sum = lastN.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
+  return sum / lastN.length;
+}
+
 // ---------------------------------------------------------------------------
 // KPI 1 - Crescimento mensal da automacao
 // ((Realizados ultimo mes preenchido - Realizados mes anterior) / Realizados mes anterior)
@@ -112,19 +128,30 @@ function kpi2QuarterlyGrowth(automationRows) {
 
 // ---------------------------------------------------------------------------
 // KPI 3 - Eficiencia vs planejamento mensal
-// Variacao Realizados - Variacao Planejados (usando os 2 ultimos meses preenchidos)
+// Eficiencia = (Realizado / Planejado) * 100 para cada mes.
+// Resultado = eficiencia atual + diferenca em PONTOS PERCENTUAIS vs mes anterior
+// (NAO e crescimento percentual - e a diferenca direta entre as eficiencias).
 // ---------------------------------------------------------------------------
 function kpi3MonthlyEfficiency(automationRows) {
   const filled = filledAutomationRows(automationRows, true);
   if (filled.length < 2) return null;
   const last = filled[filled.length - 1];
   const prev = filled[filled.length - 2];
-  const prevRealized = toNum(prev.realized);
-  const prevPlanned = toNum(prev.planned);
-  if (!prevRealized || !prevPlanned) return null;
-  const varRealized = (toNum(last.realized) - prevRealized) / prevRealized;
-  const varPlanned = (toNum(last.planned) - prevPlanned) / prevPlanned;
-  return varRealized - varPlanned;
+  if (!toNum(prev.planned) || !toNum(last.planned)) return null; // evita divisao por zero / eficiencia indefinida
+  const effCurrent = automationPercentage(last.planned, last.realized); // fracao, ex: 0.6286
+  const effPrevious = automationPercentage(prev.planned, prev.realized);
+  return { current: effCurrent, diffPP: (effCurrent - effPrevious) * 100 };
+}
+
+/** Homologacao apenas do ultimo mes preenchido (usado no grafico de pizza "mensal") */
+function lastMonthHomologation(automationRows) {
+  const filled = filledAutomationRows(automationRows);
+  if (filled.length === 0) return null;
+  const last = filled[filled.length - 1];
+  const realized = toNum(last.realized) || 0;
+  const homologated = toNum(last.homologated) || 0;
+  const rate = homologationRate(last.realized, last.homologated);
+  return { realized, homologated, rate };
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +248,10 @@ window.KpiCalc = {
   kpi6Text,
   kpi7MonthlyHomologationRate,
   aggregateHomologation,
+  lastMonthHomologation,
   aggregateSquad,
+  lastSprintsDelivered,
+  velocity,
   trend,
 };
 })();

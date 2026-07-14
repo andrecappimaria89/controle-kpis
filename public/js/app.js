@@ -13,7 +13,7 @@ const DEFAULT_KPI_CONFIG = {
   },
   kpi3: {
     title: 'Eficiência vs Planejamento Mensal',
-    description: 'Compara a variação percentual do volume realizado com a variação percentual do volume planejado no mês.',
+    description: 'Compara a eficiência (Realizado/Planejado) do mês atual com o mês anterior, em pontos percentuais.',
     type: 'Mensal',
   },
   kpi5: {
@@ -77,6 +77,7 @@ function buildDefaultState() {
       automation: defaultAutomationRows(),
       bugs: defaultBugRows(name),
       squad: defaultSquadRows(),
+      cycleTime: 3,
       kpis: JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG)),
     };
   });
@@ -91,14 +92,25 @@ let charts = { automation: null, bugs: null, homologation: null, agility: null }
 // -------------------------------- HELPERS ------------------------------------
 const { toNum, isNum } = window.KpiCalc;
 
-function formatPercent(v, { signed = false, fallback = '—' } = {}) {
+function formatPercent(v, { signed = false, fallback = '—', decimals = 1 } = {}) {
   if (v === null || v === undefined || Number.isNaN(v)) return fallback;
   const formatted = new Intl.NumberFormat('pt-BR', {
     style: 'percent',
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   }).format(v);
   return signed && v > 0 ? `+${formatted}` : formatted;
+}
+
+/** Formata uma diferenca em PONTOS PERCENTUAIS (o valor ja esta na escala 0-100, nao 0-1) */
+function formatPP(v, { decimals = 2, fallback = '—' } = {}) {
+  if (v === null || v === undefined || Number.isNaN(v)) return fallback;
+  const formatted = new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(Math.abs(v));
+  const sign = v > 0 ? '+' : v < 0 ? '-' : '';
+  return `${sign}${formatted} p.p.`;
 }
 
 function formatInt(v) {
@@ -157,7 +169,8 @@ async function loadInitialData() {
 function hydrateStateFromSupabase(remote) {
   const { areas, automation, bugs, squad, kpiConfigs } = remote;
   areaIdByName = {};
-  areas.forEach((a) => { areaIdByName[a.name] = a.id; });
+  const cycleTimeByName = {};
+  areas.forEach((a) => { areaIdByName[a.name] = a.id; cycleTimeByName[a.name] = a.cycle_time ?? ''; });
 
   const data = {};
   AREA_NAMES.forEach((name) => {
@@ -198,6 +211,7 @@ function hydrateStateFromSupabase(remote) {
       automation: autoRows.length ? autoRows : defaultAutomationRows(),
       bugs: bugRows.length ? bugRows : defaultBugRows(name),
       squad: squadRows.length ? squadRows : defaultSquadRows(),
+      cycleTime: cycleTimeByName[name] ?? '',
       kpis,
     };
   });
@@ -259,7 +273,7 @@ async function persistState(opts = {}) {
       for (const name of AREA_NAMES) {
         const areaId = areaIdByName[name];
         const areaData = state.data[name];
-        await window.DataStore.saveAreaData(areaId, name, areaData.automation, areaData.bugs, areaData.squad, areaData.kpis);
+        await window.DataStore.saveAreaData(areaId, name, areaData.automation, areaData.bugs, areaData.squad, areaData.cycleTime, areaData.kpis);
       }
 
       updateConnectionStatus('ok', 'Conectado ao Supabase');
@@ -318,7 +332,7 @@ function renderAutomationMetrics() {
     metricCard({ icon: '✅', iconCls: 'green', label: 'Total Realizado', value: formatInt(totalRealized), caption: 'Automações realizadas' }),
     metricCard({ icon: '%', iconCls: 'blue', label: '% Geral Automatizado', value: formatPercent(overallPct), caption: 'Percentual do planejado' }),
     metricCard({ icon: '🛡️', iconCls: 'green', label: 'Automações Homologadas', value: formatInt(homolog.totalHomologated), caption: 'Automações homologadas' }),
-    metricCard({ icon: '🎯', iconCls: 'green', label: 'Taxa de Efetividade', value: formatPercent(homolog.rate), caption: 'Taxa de efetividade' }),
+    metricCard({ icon: '🎯', iconCls: 'green', label: 'Taxa de Efetividade Geral', value: formatPercent(homolog.rate), caption: 'Taxa de efetividade' }),
   ];
   document.getElementById('automationMetrics').innerHTML = cards.join('');
 }
@@ -337,16 +351,46 @@ function renderBugsMetrics() {
   document.getElementById('bugsMetrics').innerHTML = cards.join('');
 }
 
+/** Card de metrica com valor editavel (usado no Cycle Time) */
+function editableMetricCard({ icon, iconCls, label, field, value, caption, placeholder = '—' }) {
+  return `
+    <div class="metric-card">
+      <div class="metric-icon ${iconCls}">${icon}</div>
+      <div class="metric-label">${label}</div>
+      <input type="number" min="0" step="0.1" class="metric-value-input" data-metric-field="${field}" value="${value ?? ''}" placeholder="${placeholder}" />
+      <div class="metric-caption">${caption}</div>
+    </div>
+  `;
+}
+
 function renderAgilityMetrics() {
-  const { squad } = currentAreaData();
+  const { squad, cycleTime } = currentAreaData();
   const agg = window.KpiCalc.aggregateSquad(squad);
+  const lastDelivered = window.KpiCalc.lastSprintsDelivered(squad, 2);
+  const vel = window.KpiCalc.velocity(squad, 2);
 
   const cards = [
     metricCard({ icon: '📌', iconCls: 'blue', label: 'Pontos Planejados', value: formatInt(agg.totalPlanned), caption: 'Total no período' }),
-    metricCard({ icon: '✅', iconCls: 'green', label: 'Pontos Entregues', value: formatInt(agg.totalDelivered), caption: 'Total entregue' }),
+    metricCard({ icon: '✅', iconCls: 'green', label: 'Pontos Entregues', value: formatInt(lastDelivered), caption: '2 últimas sprints entregues' }),
     metricCard({ icon: '🎯', iconCls: agg.rate >= 0.8 ? 'green' : agg.rate >= 0.5 ? 'orange' : 'red', label: '% de Entrega', value: formatPercent(agg.rate), caption: 'Entregue vs planejado' }),
+    metricCard({ icon: '⚡', iconCls: 'blue', label: 'Velocity', value: vel === null ? '—' : formatInt(Math.round(vel)), caption: '2 últimas sprints entregues' }),
+    editableMetricCard({ icon: '⏱️', iconCls: 'orange', label: 'Cycle Time', field: 'cycleTime', value: cycleTime, caption: 'Dias (editável)' }),
   ];
   document.getElementById('agilityMetrics').innerHTML = cards.join('');
+
+  const cycleInput = document.querySelector('[data-metric-field="cycleTime"]');
+  if (cycleInput) {
+    cycleInput.addEventListener('input', (e) => {
+      let value = e.target.value;
+      if (value !== '' && Number(value) < 0) {
+        showToast('Não é permitido usar números negativos.', 'error');
+        value = '0';
+        e.target.value = '0';
+      }
+      currentAreaData().cycleTime = value;
+      scheduleAutosave();
+    });
+  }
 }
 
 // ------------------------------- RENDER: CHARTS -------------------------------
@@ -472,12 +516,13 @@ function renderCharts() {
     options: commonOptions,
   });
 
-  // ------ Gráfico de pizza (doughnut): Taxa de Efetividade da Automação ------
-  const homolog = window.KpiCalc.aggregateHomologation(automation);
-  const naoHomologadas = Math.max(homolog.totalRealized - homolog.totalHomologated, 0);
-  const hasData = homolog.totalRealized > 0;
+  // ------ Gráfico de pizza (doughnut): Taxa Mensal de Efetividade Automatizado ------
+  // Usa somente o ultimo mes preenchido (nao o acumulado - esse fica no card "Taxa de Efetividade Geral")
+  const monthly = window.KpiCalc.lastMonthHomologation(automation);
+  const naoHomologadas = monthly ? Math.max(monthly.realized - monthly.homologated, 0) : 0;
+  const hasData = Boolean(monthly && monthly.realized > 0);
 
-  const pieValues = hasData ? [homolog.totalHomologated, naoHomologadas] : [1];
+  const pieValues = hasData ? [monthly.homologated, naoHomologadas] : [1];
   const pieColors = hasData ? ['#16a34a', '#f97316'] : ['#e6e9f2'];
   const pieLabels = hasData ? ['Homologadas', 'Não Homologadas'] : ['Sem dados'];
 
@@ -507,14 +552,14 @@ function renderCharts() {
           enabled: hasData,
           callbacks: {
             label: (ctx) => {
-              const total = homolog.totalHomologated + naoHomologadas;
+              const total = hasData ? monthly.homologated + naoHomologadas : 0;
               const pct = total ? (ctx.parsed / total) * 100 : 0;
               return ` ${ctx.label}: ${formatInt(ctx.parsed)} (${formatPercent(pct / 100)})`;
             },
           },
         },
         centerText: hasData
-          ? { text: formatPercent(homolog.rate), subtext: 'Efetividade', color: '#131a2b' }
+          ? { text: formatPercent(monthly.rate), subtext: 'Efetividade', color: '#131a2b' }
           : { text: '—', subtext: 'Sem dados', color: '#9aa1b2' },
       },
     },
@@ -587,14 +632,15 @@ function renderKpis() {
     `));
   }
 
-  // KPI 3
+  // KPI 3 — eficiencia atual + diferenca em pontos percentuais vs mes anterior
   {
-    const t = trendArrow(kpi3);
-    const cls = kpi3 === null ? '' : kpi3 >= 0 ? 'positive' : 'negative';
+    const diffPP = kpi3 ? kpi3.diffPP : null;
+    const t = trendArrow(diffPP);
+    const cls = diffPP === null ? '' : diffPP >= 0 ? 'positive' : 'negative';
     automationBlocks.push(kpiListItem('kpi3', `
-      <div class="kpi-list-value ${cls}">
-        ${formatPercent(kpi3, { signed: true })}
-        <span class="kpi-trend ${t.cls}">${t.symbol}</span>
+      <div class="kpi-list-value ${cls}">${kpi3 ? formatPercent(kpi3.current, { decimals: 2 }) : '—'}</div>
+      <div class="kpi-phrase">
+        <span class="kpi-trend ${t.cls}">${t.symbol}</span> ${formatPP(diffPP)} vs mês anterior
       </div>
     `));
   }
