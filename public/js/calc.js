@@ -73,6 +73,15 @@ function aggregateHomologation(automationRows) {
   return { totalRealized, totalHomologated, rate };
 }
 
+/** Agregado da Tabela 3 (Volumetria Squad) para o painel de Agilidade */
+function aggregateSquad(squadRows) {
+  const filled = (squadRows || []).filter((r) => isNum(r.pointsPlanned) || isNum(r.pointsDelivered));
+  const totalPlanned = filled.reduce((acc, r) => acc + (toNum(r.pointsPlanned) || 0), 0);
+  const totalDelivered = filled.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
+  const rate = totalPlanned ? totalDelivered / totalPlanned : 0;
+  return { totalPlanned, totalDelivered, rate };
+}
+
 // ---------------------------------------------------------------------------
 // KPI 1 - Crescimento mensal da automacao
 // ((Realizados ultimo mes preenchido - Realizados mes anterior) / Realizados mes anterior)
@@ -212,6 +221,7 @@ window.KpiCalc = {
   kpi6Text,
   kpi7MonthlyHomologationRate,
   aggregateHomologation,
+  aggregateSquad,
   trend,
 };
 })();

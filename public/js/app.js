@@ -31,11 +31,25 @@ const DEFAULT_KPI_CONFIG = {
 // Dados de exemplo, iguais aos da planilha original, usados apenas na primeira carga.
 function defaultAutomationRows() {
   return [
-    { month: 'Mar', flow: 'Login', planned: 30, realized: 10, homologated: 8, toAnalyze: 2 },
-    { month: 'Abr', flow: 'Checkout', planned: 32, realized: 15, homologated: 11, toAnalyze: 3 },
-    { month: 'Mai', flow: 'Pagamento', planned: 35, realized: 16, homologated: 13, toAnalyze: 1 },
+    { month: 'Mar', flow: 3, planned: 30, realized: 10, homologated: 8, toAnalyze: 2 },
+    { month: 'Abr', flow: 4, planned: 32, realized: 15, homologated: 11, toAnalyze: 3 },
+    { month: 'Mai', flow: 4, planned: 35, realized: 16, homologated: 13, toAnalyze: 1 },
     { month: 'Jun', flow: '', planned: '', realized: '', homologated: '', toAnalyze: '' },
     { month: 'Jul', flow: '', planned: '', realized: '', homologated: '', toAnalyze: '' },
+  ];
+}
+
+/** Gera um id estavel no navegador para linhas sem chave natural (ex: sprints da Tabela 3) */
+function makeId() {
+  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  return `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+// Dados de exemplo para a Tabela 3 - Volumetria Squad
+function defaultSquadRows() {
+  return [
+    { id: makeId(), startDate: '2026-06-01', endDate: '2026-06-14', sprint: 'Sprint 23', pointsPlanned: 40, pointsDelivered: 34 },
+    { id: makeId(), startDate: '2026-06-15', endDate: '2026-06-28', sprint: 'Sprint 24', pointsPlanned: 45, pointsDelivered: 42 },
   ];
 }
 
@@ -62,6 +76,7 @@ function buildDefaultState() {
     data[name] = {
       automation: defaultAutomationRows(),
       bugs: defaultBugRows(name),
+      squad: defaultSquadRows(),
       kpis: JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG)),
     };
   });
@@ -71,7 +86,7 @@ function buildDefaultState() {
 // ------------------------------- ESTADO GLOBAL ------------------------------
 let state = buildDefaultState();
 let areaIdByName = {}; // preenchido quando o Supabase esta configurado
-let charts = { automation: null, bugs: null, homologation: null };
+let charts = { automation: null, bugs: null, homologation: null, agility: null };
 
 // -------------------------------- HELPERS ------------------------------------
 const { toNum, isNum } = window.KpiCalc;
@@ -140,7 +155,7 @@ async function loadInitialData() {
 }
 
 function hydrateStateFromSupabase(remote) {
-  const { areas, automation, bugs, kpiConfigs } = remote;
+  const { areas, automation, bugs, squad, kpiConfigs } = remote;
   areaIdByName = {};
   areas.forEach((a) => { areaIdByName[a.name] = a.id; });
 
@@ -160,6 +175,16 @@ function hydrateStateFromSupabase(remote) {
     const bugRows = bugs
       .filter((r) => r.area_id === areaId)
       .map((r) => ({ month: r.month, opened: r.opened ?? '', resolved: r.resolved ?? '' }));
+    const squadRows = (squad || [])
+      .filter((r) => r.area_id === areaId)
+      .map((r) => ({
+        id: r.id,
+        startDate: r.start_date ?? '',
+        endDate: r.end_date ?? '',
+        sprint: r.sprint ?? '',
+        pointsPlanned: r.points_planned ?? '',
+        pointsDelivered: r.points_delivered ?? '',
+      }));
 
     const kpis = JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG));
     kpiConfigs
@@ -172,6 +197,7 @@ function hydrateStateFromSupabase(remote) {
     data[name] = {
       automation: autoRows.length ? autoRows : defaultAutomationRows(),
       bugs: bugRows.length ? bugRows : defaultBugRows(name),
+      squad: squadRows.length ? squadRows : defaultSquadRows(),
       kpis,
     };
   });
@@ -233,7 +259,7 @@ async function persistState(opts = {}) {
       for (const name of AREA_NAMES) {
         const areaId = areaIdByName[name];
         const areaData = state.data[name];
-        await window.DataStore.saveAreaData(areaId, name, areaData.automation, areaData.bugs, areaData.kpis);
+        await window.DataStore.saveAreaData(areaId, name, areaData.automation, areaData.bugs, areaData.squad, areaData.kpis);
       }
 
       updateConnectionStatus('ok', 'Conectado ao Supabase');
@@ -268,35 +294,59 @@ function renderAreaTabs() {
   });
 }
 
-// ------------------------------ RENDER: SUMMARY -------------------------------
-function renderSummary() {
-  const { automation, bugs } = currentAreaData();
+// ------------------------------ RENDER: METRIC CARDS --------------------------
+function metricCard({ icon, iconCls, label, value, caption }) {
+  return `
+    <div class="metric-card">
+      <div class="metric-icon ${iconCls}">${icon}</div>
+      <div class="metric-label">${label}</div>
+      <div class="metric-value">${value}</div>
+      <div class="metric-caption">${caption}</div>
+    </div>
+  `;
+}
+
+function renderAutomationMetrics() {
+  const { automation } = currentAreaData();
   const totalPlanned = automation.reduce((a, r) => a + (toNum(r.planned) || 0), 0);
   const totalRealized = automation.reduce((a, r) => a + (toNum(r.realized) || 0), 0);
-  const totalOpened = bugs.reduce((a, r) => a + (toNum(r.opened) || 0), 0);
-  const totalResolved = bugs.reduce((a, r) => a + (toNum(r.resolved) || 0), 0);
-  const backlog = totalOpened - totalResolved;
   const overallPct = totalPlanned ? totalRealized / totalPlanned : 0;
   const homolog = window.KpiCalc.aggregateHomologation(automation);
 
   const cards = [
-    { label: 'Total Planejado', value: formatInt(totalPlanned), dot: 'dot-blue' },
-    { label: 'Total Realizado', value: formatInt(totalRealized), dot: 'dot-green' },
-    { label: '% Geral Automatizado', value: formatPercent(overallPct), dot: 'dot-blue' },
-    { label: 'Automações Homologadas', value: formatInt(homolog.totalHomologated), dot: 'dot-green' },
-    { label: 'Taxa de Efetividade', value: formatPercent(homolog.rate), dot: 'dot-green' },
-    { label: 'Bugs Abertos', value: formatInt(totalOpened), dot: 'dot-orange' },
-    { label: 'Bugs Resolvidos', value: formatInt(totalResolved), dot: 'dot-green' },
-    { label: 'Backlog Atual', value: formatInt(backlog), dot: backlog > 0 ? 'dot-red' : 'dot-green' },
+    metricCard({ icon: '📋', iconCls: 'blue', label: 'Total Planejado', value: formatInt(totalPlanned), caption: 'Automações planejadas' }),
+    metricCard({ icon: '✅', iconCls: 'green', label: 'Total Realizado', value: formatInt(totalRealized), caption: 'Automações realizadas' }),
+    metricCard({ icon: '%', iconCls: 'blue', label: '% Geral Automatizado', value: formatPercent(overallPct), caption: 'Percentual do planejado' }),
+    metricCard({ icon: '🛡️', iconCls: 'green', label: 'Automações Homologadas', value: formatInt(homolog.totalHomologated), caption: 'Automações homologadas' }),
+    metricCard({ icon: '🎯', iconCls: 'green', label: 'Taxa de Efetividade', value: formatPercent(homolog.rate), caption: 'Taxa de efetividade' }),
   ];
+  document.getElementById('automationMetrics').innerHTML = cards.join('');
+}
 
-  const grid = document.getElementById('summaryGrid');
-  grid.innerHTML = cards.map((c) => `
-    <div class="summary-card">
-      <div class="s-label"><i class="dot ${c.dot}"></i>${c.label}</div>
-      <div class="s-value">${c.value}</div>
-    </div>
-  `).join('');
+function renderBugsMetrics() {
+  const { bugs } = currentAreaData();
+  const totalOpened = bugs.reduce((a, r) => a + (toNum(r.opened) || 0), 0);
+  const totalResolved = bugs.reduce((a, r) => a + (toNum(r.resolved) || 0), 0);
+  const backlog = totalOpened - totalResolved;
+
+  const cards = [
+    metricCard({ icon: '🐛', iconCls: 'orange', label: 'Bugs Abertos', value: formatInt(totalOpened), caption: 'Bugs em aberto' }),
+    metricCard({ icon: '✅', iconCls: 'green', label: 'Bugs Resolvidos', value: formatInt(totalResolved), caption: 'Bugs resolvidos' }),
+    metricCard({ icon: '⚠️', iconCls: backlog > 0 ? 'red' : 'green', label: 'Backlog Atual', value: formatInt(backlog), caption: 'Bugs pendentes' }),
+  ];
+  document.getElementById('bugsMetrics').innerHTML = cards.join('');
+}
+
+function renderAgilityMetrics() {
+  const { squad } = currentAreaData();
+  const agg = window.KpiCalc.aggregateSquad(squad);
+
+  const cards = [
+    metricCard({ icon: '📌', iconCls: 'blue', label: 'Pontos Planejados', value: formatInt(agg.totalPlanned), caption: 'Total no período' }),
+    metricCard({ icon: '✅', iconCls: 'green', label: 'Pontos Entregues', value: formatInt(agg.totalDelivered), caption: 'Total entregue' }),
+    metricCard({ icon: '🎯', iconCls: agg.rate >= 0.8 ? 'green' : agg.rate >= 0.5 ? 'orange' : 'red', label: '% de Entrega', value: formatPercent(agg.rate), caption: 'Entregue vs planejado' }),
+  ];
+  document.getElementById('agilityMetrics').innerHTML = cards.join('');
 }
 
 // ------------------------------- RENDER: CHARTS -------------------------------
@@ -326,11 +376,12 @@ const centerTextPlugin = {
 };
 
 function renderCharts() {
-  const { automation, bugs } = currentAreaData();
+  const { automation, bugs, squad } = currentAreaData();
 
   const autoWrap = document.getElementById('automationChart').parentElement;
   const bugsWrap = document.getElementById('bugsChart').parentElement;
   const homologWrap = document.getElementById('homologationChart').parentElement;
+  const agilityWrap = document.getElementById('agilityChart').parentElement;
 
   if (!window.Chart) {
     // Biblioteca de graficos ainda nao carregou (rede lenta) ou foi bloqueada
@@ -349,17 +400,20 @@ function renderCharts() {
     autoWrap.innerHTML = msg;
     bugsWrap.innerHTML = msg;
     homologWrap.innerHTML = msg;
+    agilityWrap.innerHTML = msg;
     return;
   }
 
   const autoCtx = document.getElementById('automationChart');
   const bugsCtx = document.getElementById('bugsChart');
   const homologCtx = document.getElementById('homologationChart');
-  if (!autoCtx || !bugsCtx || !homologCtx) return; // canvas foi substituido pela mensagem de erro em uma tentativa anterior
+  const agilityCtx = document.getElementById('agilityChart');
+  if (!autoCtx || !bugsCtx || !homologCtx || !agilityCtx) return; // canvas foi substituido pela mensagem de erro em uma tentativa anterior
 
   if (charts.automation) charts.automation.destroy();
   if (charts.bugs) charts.bugs.destroy();
   if (charts.homologation) charts.homologation.destroy();
+  if (charts.agility) charts.agility.destroy();
 
   // registra os plugins (uma unica vez) se carregaram
   if (window.ChartDataLabels && !window.__datalabelsRegistered) {
@@ -465,6 +519,20 @@ function renderCharts() {
       },
     },
   });
+
+  // ------ Gráfico de barras: Pontos Planejados x Pontos Entregues (Agilidade) ------
+  const squadLabels = (squad || []).map((r) => r.sprint || '—');
+  charts.agility = new Chart(agilityCtx, {
+    type: 'bar',
+    data: {
+      labels: squadLabels,
+      datasets: [
+        { label: 'Planejados', data: (squad || []).map((r) => toNum(r.pointsPlanned) ?? 0), backgroundColor: '#2563eb', borderRadius: 6 },
+        { label: 'Entregues', data: (squad || []).map((r) => toNum(r.pointsDelivered) ?? 0), backgroundColor: '#16a34a', borderRadius: 6 },
+      ],
+    },
+    options: commonOptions,
+  });
 }
 
 // -------------------------------- RENDER: KPIs --------------------------------
@@ -474,14 +542,12 @@ function escapeHtml(str) {
   }[c]));
 }
 
-function kpiCardShell(key, resultHtml, extraCls = '') {
+function kpiListItem(key, resultHtml) {
   const cfg = currentAreaData().kpis[key];
   return `
-    <div class="kpi-card ${extraCls}" data-kpi="${key}">
-      <div class="kpi-top-row">
-        <span class="kpi-type-badge">${escapeHtml(cfg.type)}</span>
-      </div>
-      <textarea class="kpi-title-input" rows="2" data-kpi-field="title" data-kpi="${key}">${escapeHtml(cfg.title)}</textarea>
+    <div class="kpi-list-item" data-kpi="${key}">
+      <span class="kpi-type-badge">${escapeHtml(cfg.type)}</span>
+      <textarea class="kpi-title-input" rows="1" data-kpi-field="title" data-kpi="${key}">${escapeHtml(cfg.title)}</textarea>
       <textarea class="kpi-desc-input" rows="2" data-kpi-field="description" data-kpi="${key}">${escapeHtml(cfg.description)}</textarea>
       ${resultHtml}
     </div>
@@ -504,6 +570,7 @@ function renderKpis() {
   const kpi1 = C.kpi1MonthlyGrowth(automation);
   const kpi3 = C.kpi3MonthlyEfficiency(automation);
   const kpi5 = C.kpi5MonthlyResolution(bugs);
+  const kpi7 = C.kpi7MonthlyHomologationRate(automation);
 
   const automationBlocks = [];
   const bugBlocks = [];
@@ -512,49 +579,44 @@ function renderKpis() {
   {
     const t = trendArrow(kpi1);
     const cls = kpi1 === null ? '' : kpi1 >= 0 ? 'positive' : 'negative';
-    automationBlocks.push(kpiCardShell('kpi1', `
-      <div class="kpi-result-row">
-        <span class="kpi-result-value">${formatPercent(kpi1, { signed: true })}</span>
+    automationBlocks.push(kpiListItem('kpi1', `
+      <div class="kpi-list-value ${cls}">
+        ${formatPercent(kpi1, { signed: true })}
         <span class="kpi-trend ${t.cls}">${t.symbol}</span>
       </div>
-    `, cls));
+    `));
   }
 
   // KPI 3
   {
     const t = trendArrow(kpi3);
     const cls = kpi3 === null ? '' : kpi3 >= 0 ? 'positive' : 'negative';
-    automationBlocks.push(kpiCardShell('kpi3', `
-      <div class="kpi-result-row">
-        <span class="kpi-result-value">${formatPercent(kpi3, { signed: true })}</span>
+    automationBlocks.push(kpiListItem('kpi3', `
+      <div class="kpi-list-value ${cls}">
+        ${formatPercent(kpi3, { signed: true })}
         <span class="kpi-trend ${t.cls}">${t.symbol}</span>
       </div>
-    `, cls));
+    `));
+  }
+
+  // KPI 7 — taxa de automacoes homologadas (mensal): faixa de cor 0-50/51-80/81-100
+  {
+    const cls = rateColorClass(kpi7);
+    automationBlocks.push(kpiListItem('kpi7', `
+      <div class="kpi-list-value ${cls}">${formatPercent(kpi7)}</div>
+    `));
   }
 
   // KPI 5 — taxa de solucao mensal: cor por faixa (0-50% vermelho / 51-80% laranja / 81-100% verde)
   {
     const cls = rateColorClass(kpi5);
-    bugBlocks.push(kpiCardShell('kpi5', `
-      <div class="kpi-result-row">
-        <span class="kpi-result-value">${formatPercent(kpi5)}</span>
-      </div>
-    `, cls));
+    bugBlocks.push(kpiListItem('kpi5', `
+      <div class="kpi-list-value ${cls}">${formatPercent(kpi5)}</div>
+    `));
   }
 
-  // KPI 7 — taxa de automacoes homologadas (mensal): mesma faixa de cor 0-50/51-80/81-100
-  {
-    const kpi7 = C.kpi7MonthlyHomologationRate(automation);
-    const cls = rateColorClass(kpi7);
-    automationBlocks.push(kpiCardShell('kpi7', `
-      <div class="kpi-result-row">
-        <span class="kpi-result-value">${formatPercent(kpi7)}</span>
-      </div>
-    `, cls));
-  }
-
-  document.getElementById('kpiGridAutomation').innerHTML = automationBlocks.join('');
-  document.getElementById('kpiGridBugs').innerHTML = bugBlocks.join('');
+  document.getElementById('kpiListAutomation').innerHTML = automationBlocks.join('');
+  document.getElementById('kpiListBugs').innerHTML = bugBlocks.join('');
 
   // eventos de edicao de titulo/descricao (resultado nunca e editavel)
   document.querySelectorAll('[data-kpi-field]').forEach((el) => {
@@ -584,7 +646,7 @@ function renderAutomationTable() {
     return `
       <tr data-idx="${idx}">
         <td class="month-label">${r.month}</td>
-        <td><input type="text" maxlength="60" class="cell-input flow" data-table="automation" data-idx="${idx}" data-field="flow" value="${escapeHtml(r.flow ?? '')}" placeholder="—" /></td>
+        <td><input type="number" min="0" class="cell-input flow" data-table="automation" data-idx="${idx}" data-field="flow" value="${r.flow ?? ''}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input planned" data-table="automation" data-idx="${idx}" data-field="planned" value="${r.planned}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input realized" data-table="automation" data-idx="${idx}" data-field="realized" value="${r.realized}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input homologated" data-table="automation" data-idx="${idx}" data-field="homologated" value="${r.homologated ?? ''}" placeholder="—" title="Não pode ser maior que Realizados" /></td>
@@ -613,13 +675,30 @@ function renderBugsTable() {
   }).join('');
 }
 
+function renderSquadTable() {
+  const rows = currentAreaData().squad || [];
+  const tbody = document.querySelector('#squadTable tbody');
+  tbody.innerHTML = rows.map((r, idx) => `
+    <tr data-idx="${idx}">
+      <td><input type="date" class="cell-input date" data-table="squad" data-idx="${idx}" data-field="startDate" value="${r.startDate || ''}" /></td>
+      <td><input type="date" class="cell-input date" data-table="squad" data-idx="${idx}" data-field="endDate" value="${r.endDate || ''}" /></td>
+      <td><input type="text" maxlength="40" class="cell-input sprint" data-table="squad" data-idx="${idx}" data-field="sprint" value="${escapeHtml(r.sprint || '')}" placeholder="Sprint" /></td>
+      <td><input type="number" min="0" class="cell-input planned" data-table="squad" data-idx="${idx}" data-field="pointsPlanned" value="${r.pointsPlanned}" placeholder="—" /></td>
+      <td><input type="number" min="0" class="cell-input resolved" data-table="squad" data-idx="${idx}" data-field="pointsDelivered" value="${r.pointsDelivered}" placeholder="—" /></td>
+      <td><button class="row-delete" data-remove="squad" data-idx="${idx}" title="Remover sprint">✕</button></td>
+    </tr>
+  `).join('');
+}
+
+const NON_NUMERIC_FIELDS = ['sprint', 'startDate', 'endDate'];
+
 function bindTableEvents() {
   document.querySelectorAll('.cell-input').forEach((input) => {
     input.addEventListener('input', (e) => {
       const { table, idx, field } = e.target.dataset;
       let value = e.target.value;
 
-      if (field !== 'flow' && value !== '' && Number(value) < 0) {
+      if (!NON_NUMERIC_FIELDS.includes(field) && value !== '' && Number(value) < 0) {
         e.target.classList.add('invalid');
         showToast('Não é permitido usar números negativos.', 'error');
         value = '0';
@@ -640,16 +719,21 @@ function bindTableEvents() {
 
       currentAreaData()[table][idx][field] = value;
       scheduleAutosave();
-      renderSummary();
+      renderAutomationMetrics();
+      renderBugsMetrics();
+      renderAgilityMetrics();
       renderKpis();
-      renderCharts();
+      if (state.page === 'dashboard') renderCharts();
+
       // atualiza somente a celula de percentual da linha editada, sem redesenhar tudo (mantem o foco)
       const row = e.target.closest('tr');
       const pctCell = row.querySelector('.pct-readonly');
-      const data = currentAreaData()[table][idx];
-      pctCell.textContent = table === 'automation'
-        ? formatPercent(window.KpiCalc.automationPercentage(data.planned, data.realized))
-        : formatPercent(window.KpiCalc.resolutionRate(data.opened, data.resolved));
+      if (pctCell) {
+        const data = currentAreaData()[table][idx];
+        pctCell.textContent = table === 'automation'
+          ? formatPercent(window.KpiCalc.automationPercentage(data.planned, data.realized))
+          : formatPercent(window.KpiCalc.resolutionRate(data.opened, data.resolved));
+      }
     });
   });
 
@@ -684,14 +768,20 @@ function addMonth(table) {
   renderAll();
 }
 
+function addSquadRow() {
+  currentAreaData().squad.push({ id: makeId(), startDate: '', endDate: '', sprint: '', pointsPlanned: '', pointsDelivered: '' });
+  scheduleAutosave();
+  renderAll();
+}
+
 // -------------------------------- CSV EXPORT ----------------------------------
 function exportCsv() {
-  const { automation, bugs } = currentAreaData();
+  const { automation, bugs, squad } = currentAreaData();
   const lines = [];
   lines.push(`Área;${state.currentArea}`);
   lines.push('');
   lines.push('Volumetria de Testes Automatizados');
-  lines.push('Mês;Fluxo;Planejados;Realizados;Automações Homologadas;Automações a Analisar;Percentual;Taxa de Homologação');
+  lines.push('Mês;Qtd Fluxos;Planejados;Realizados;Automações Homologadas;Automações a Analisar;Percentual;Taxa de Homologação');
   automation.forEach((r) => {
     const pct = window.KpiCalc.automationPercentage(r.planned, r.realized);
     const homologRate = window.KpiCalc.homologationRate(r.realized, r.homologated);
@@ -703,6 +793,12 @@ function exportCsv() {
   bugs.forEach((r) => {
     const rate = window.KpiCalc.resolutionRate(r.opened, r.resolved);
     lines.push(`${r.month};${r.opened};${r.resolved};${formatPercent(rate)}`);
+  });
+  lines.push('');
+  lines.push('Volumetria Squad');
+  lines.push('Data Início;Data Fim;Sprint;Pontos Planejados;Pontos Entregues');
+  (squad || []).forEach((r) => {
+    lines.push(`${r.startDate ?? ''};${r.endDate ?? ''};${r.sprint ?? ''};${r.pointsPlanned ?? ''};${r.pointsDelivered ?? ''}`);
   });
 
   const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -719,7 +815,10 @@ function duplicateStructureToAllAreas() {
   const source = JSON.parse(JSON.stringify(currentAreaData()));
   AREA_NAMES.forEach((name) => {
     if (name === state.currentArea) return;
-    state.data[name] = JSON.parse(JSON.stringify(source));
+    const copy = JSON.parse(JSON.stringify(source));
+    // cada linha da Tabela 3 precisa de um id proprio (chave primaria global no Supabase)
+    copy.squad = (copy.squad || []).map((r) => ({ ...r, id: makeId() }));
+    state.data[name] = copy;
   });
   scheduleAutosave();
   showToast(`Estrutura de "${state.currentArea}" duplicada para todas as áreas.`, 'success');
@@ -744,11 +843,14 @@ function bindPageToggle() {
 
 // ---------------------------------- RENDER ALL ----------------------------------
 function renderAll() {
-  renderSummary();
+  renderAutomationMetrics();
+  renderBugsMetrics();
+  renderAgilityMetrics();
   if (state.page === 'dashboard') renderCharts();
   renderKpis();
   renderAutomationTable();
   renderBugsTable();
+  renderSquadTable();
   bindTableEvents();
 }
 
@@ -773,7 +875,10 @@ async function init() {
   document.getElementById('duplicateBtn').addEventListener('click', duplicateStructureToAllAreas);
   document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
   document.querySelectorAll('[data-add]').forEach((btn) => {
-    btn.addEventListener('click', () => addMonth(btn.dataset.add));
+    btn.addEventListener('click', () => {
+      if (btn.dataset.add === 'squad') addSquadRow();
+      else addMonth(btn.dataset.add);
+    });
   });
   bindPageToggle();
 

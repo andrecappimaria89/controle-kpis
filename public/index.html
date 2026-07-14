@@ -43,51 +43,90 @@
   <!-- ======================= PÁGINA: DASHBOARD ======================= -->
   <div id="pageDashboard">
 
-    <!-- ======================= RESUMO GERAL ======================= -->
     <h2 class="section-title">Valor Acumulado</h2>
-    <section class="summary-grid" id="summaryGrid" aria-label="Resumo geral da área"></section>
+    <p class="page-hint">Visão geral do desempenho de automações, bugs e agilidade.</p>
 
-    <!-- ======================= DASHBOARDS ======================= -->
-    <section class="dashboards">
-      <div class="chart-card">
-        <div class="chart-card-head">
-          <h2>Volumetria de Testes Automatizados</h2>
-          <span class="legend"><i class="dot dot-blue"></i>Planejados <i class="dot dot-green"></i>Realizados</span>
-        </div>
-        <div class="chart-wrap"><canvas id="automationChart"></canvas></div>
-      </div>
-      <div class="chart-card chart-card-narrow">
-        <div class="chart-card-head">
-          <h2>Taxa de Efetividade da Automação</h2>
-          <span class="legend"><i class="dot dot-green"></i>Homologadas <i class="dot dot-orange"></i>Não Homologadas</span>
-        </div>
-        <div class="chart-wrap"><canvas id="homologationChart"></canvas></div>
-      </div>
-      <div class="chart-card">
-        <div class="chart-card-head">
-          <h2>Volumetria de Bugs</h2>
-          <span class="legend"><i class="dot dot-orange"></i>Abertos <i class="dot dot-green"></i>Resolvidos</span>
-        </div>
-        <div class="chart-wrap"><canvas id="bugsChart"></canvas></div>
-      </div>
-    </section>
-
-    <!-- ======================= KPIs ======================= -->
-    <section class="kpi-section">
-      <h2 class="section-title">Indicadores (KPIs)</h2>
-
-      <div class="kpi-panels">
-        <div class="kpi-panel">
-          <h3 class="kpi-subtitle">KPIs Automação</h3>
-          <div class="kpi-grid kpi-grid-automation" id="kpiGridAutomation"></div>
-        </div>
-
-        <div class="kpi-panel">
-          <h3 class="kpi-subtitle">KPIs Volumetria Bugs</h3>
-          <div class="kpi-grid kpi-grid-bugs" id="kpiGridBugs"></div>
+    <!-- ======================= AUTOMAÇÃO ======================= -->
+    <div class="domain-panel">
+      <div class="domain-panel-header">
+        <div class="domain-icon blue">🤖</div>
+        <div class="domain-title">
+          <h2>Automação</h2>
+          <p>Acompanhe o volume de testes automatizados e a efetividade das automações.</p>
         </div>
       </div>
-    </section>
+
+      <div class="metric-row" id="automationMetrics"></div>
+
+      <div class="panel-content-row panel-content-3col">
+        <div class="chart-box">
+          <div class="chart-box-head">
+            <h4>Volumetria de Testes Automatizados</h4>
+            <span class="legend"><i class="dot dot-blue"></i>Planejados <i class="dot dot-green"></i>Realizados</span>
+          </div>
+          <div class="chart-box-wrap"><canvas id="automationChart"></canvas></div>
+        </div>
+        <div class="chart-box">
+          <div class="chart-box-head">
+            <h4>Taxa de Efetividade da Automação</h4>
+            <span class="legend"><i class="dot dot-green"></i>Homologadas <i class="dot dot-orange"></i>Não Homologadas</span>
+          </div>
+          <div class="chart-box-wrap"><canvas id="homologationChart"></canvas></div>
+        </div>
+        <div class="kpi-list-box">
+          <h4>KPIs Automação</h4>
+          <div id="kpiListAutomation"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================= BUGS ======================= -->
+    <div class="domain-panel">
+      <div class="domain-panel-header">
+        <div class="domain-icon orange">🐞</div>
+        <div class="domain-title">
+          <h2>Bugs</h2>
+          <p>Acompanhe o volume de bugs abertos, resolvidos e o backlog atual.</p>
+        </div>
+      </div>
+
+      <div class="metric-row" id="bugsMetrics"></div>
+
+      <div class="panel-content-row panel-content-2col">
+        <div class="chart-box">
+          <div class="chart-box-head">
+            <h4>Volumetria de Bugs</h4>
+            <span class="legend"><i class="dot dot-orange"></i>Abertos <i class="dot dot-green"></i>Resolvidos</span>
+          </div>
+          <div class="chart-box-wrap"><canvas id="bugsChart"></canvas></div>
+        </div>
+        <div class="kpi-list-box">
+          <h4>KPIs Bugs</h4>
+          <div id="kpiListBugs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================= AGILIDADE ======================= -->
+    <div class="domain-panel">
+      <div class="domain-panel-header">
+        <div class="domain-icon green">🏃</div>
+        <div class="domain-title">
+          <h2>Agilidade</h2>
+          <p>Acompanhe os pontos planejados e entregues por sprint da squad.</p>
+        </div>
+      </div>
+
+      <div class="metric-row" id="agilityMetrics"></div>
+
+      <div class="chart-box">
+        <div class="chart-box-head">
+          <h4>Pontos Planejados x Pontos Entregues</h4>
+          <span class="legend"><i class="dot dot-blue"></i>Planejados <i class="dot dot-green"></i>Entregues</span>
+        </div>
+        <div class="chart-box-wrap chart-box-wrap-tall"><canvas id="agilityChart"></canvas></div>
+      </div>
+    </div>
 
   </div>
 
@@ -113,7 +152,7 @@
             <thead>
               <tr>
                 <th>Mês</th>
-                <th>Fluxo</th>
+                <th>Qtd Fluxos</th>
                 <th>Planejados</th>
                 <th>Realizados</th>
                 <th>Automações Homologadas</th>
@@ -136,6 +175,28 @@
           <table id="bugsTable" class="data-table">
             <thead>
               <tr><th>Mês</th><th>Abertos</th><th>Resolvidos</th><th>Índice de Resolução</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-card-head">
+          <h3>Tabela 3 — Volumetria Squad</h3>
+          <button class="btn btn-add" data-add="squad">+ Adicionar sprint</button>
+        </div>
+        <div class="table-scroll">
+          <table id="squadTable" class="data-table">
+            <thead>
+              <tr>
+                <th>Data Início</th>
+                <th>Data Fim</th>
+                <th>Sprint</th>
+                <th>Pontos Planejados</th>
+                <th>Pontos Entregues</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody></tbody>
           </table>

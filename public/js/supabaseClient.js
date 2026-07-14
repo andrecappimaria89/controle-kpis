@@ -53,12 +53,18 @@ async function fetchAllData() {
     .order('month_order', { ascending: true });
   if (bugsErr) throw bugsErr;
 
+  const { data: squad, error: squadErr } = await supabaseClient
+    .from('squad_metrics')
+    .select('*')
+    .order('start_date', { ascending: true });
+  if (squadErr) throw squadErr;
+
   const { data: kpiConfigs, error: kpiErr } = await supabaseClient
     .from('kpi_configs')
     .select('*');
   if (kpiErr) throw kpiErr;
 
-  return { areas, automation, bugs, kpiConfigs };
+  return { areas, automation, bugs, squad, kpiConfigs };
 }
 
 /**
@@ -69,7 +75,7 @@ async function fetchAllData() {
  * na tela (ex: usuário excluiu um mês). Assim nunca existe um instante em
  * que a área fique com zero linhas no banco por causa de uma queda de rede.
  */
-async function saveAreaData(areaId, areaName, automationRows, bugRows, kpiConfigs) {
+async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows, kpiConfigs) {
   if (!supabaseClient) throw new Error('Supabase nao configurado');
 
   const automationPayload = automationRows.map((r, idx) => ({
@@ -92,6 +98,16 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, kpiConfig
     opened: r.opened === '' ? null : r.opened,
     resolved: r.resolved === '' ? null : r.resolved,
     resolution_rate: window.KpiCalc.resolutionRate(r.opened, r.resolved),
+  }));
+
+  const squadPayload = (squadRows || []).map((r) => ({
+    id: r.id,
+    area_id: areaId,
+    sprint: r.sprint === '' || r.sprint === undefined ? null : r.sprint,
+    start_date: r.startDate === '' || r.startDate === undefined ? null : r.startDate,
+    end_date: r.endDate === '' || r.endDate === undefined ? null : r.endDate,
+    points_planned: r.pointsPlanned === '' || r.pointsPlanned === undefined ? null : r.pointsPlanned,
+    points_delivered: r.pointsDelivered === '' || r.pointsDelivered === undefined ? null : r.pointsDelivered,
   }));
 
   const kpiPayload = Object.entries(kpiConfigs).map(([kpiKey, cfg]) => ({
@@ -118,9 +134,26 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, kpiConfig
     if (delErr) throw delErr;
   }
 
+  /** mesma logica upsert-depois-apaga-orfaos, mas usando o id gerado no navegador como chave */
+  async function syncSquadTable(payload, currentIds) {
+    if (payload.length) {
+      const { error: upErr } = await supabaseClient.from('squad_metrics').upsert(payload, { onConflict: 'id' });
+      if (upErr) throw upErr;
+    }
+
+    let delQuery = supabaseClient.from('squad_metrics').delete().eq('area_id', areaId);
+    if (currentIds.length) {
+      const list = currentIds.map((id) => `"${id}"`).join(',');
+      delQuery = delQuery.not('id', 'in', `(${list})`);
+    }
+    const { error: delErr } = await delQuery;
+    if (delErr) throw delErr;
+  }
+
   await Promise.all([
     syncTable('automation_metrics', automationPayload, automationRows.map((r) => r.month)),
     syncTable('bug_metrics', bugPayload, bugRows.map((r) => r.month)),
+    syncSquadTable(squadPayload, (squadRows || []).map((r) => r.id)),
     (async () => {
       if (!kpiPayload.length) return;
       const { error } = await supabaseClient.from('kpi_configs').upsert(kpiPayload, { onConflict: 'area_id,kpi_key' });
