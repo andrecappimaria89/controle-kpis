@@ -2,7 +2,7 @@
 // app.js - estado da aplicacao, renderizacao e interacoes.
 // ============================================================================
 
-const AREA_NAMES = ['DIRECT', 'CBB', 'PVP', 'CS', 'RFs'];
+const AREA_NAMES = ['DIRECT', 'CBB', 'PVP', 'CS', 'RFs', 'Autbank'];
 const MONTH_CYCLE = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 const DEFAULT_KPI_CONFIG = {
