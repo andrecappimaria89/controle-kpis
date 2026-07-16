@@ -7,7 +7,8 @@
 create table if not exists areas (
   id   uuid primary key default gen_random_uuid(),
   name text not null unique,
-  cycle_time numeric                         -- Cycle Time (dias) - valor editavel, nao calculado
+  cycle_time_days  numeric,                  -- Cycle Time - dias (valor editavel, nao calculado)
+  cycle_time_hours numeric                   -- Cycle Time - horas (valor editavel, nao calculado)
 );
 
 insert into areas (name)
@@ -107,14 +108,17 @@ cross join (
      'Percentual de testes automatizados realizados, com meta de crescimento contínuo de 1 ponto percentual ao mês.',
      'Mensal'),
     ('kpi3', 'Eficiência vs Planejamento Mensal',
-     'Compara a variação percentual do volume realizado com a variação percentual do volume planejado no mês.',
+     'Compara a eficiência (Realizado/Planejado) do mês atual com o mês anterior, em pontos percentuais.',
      'Mensal'),
     ('kpi5', 'Taxa de Solução Mensal de Bugs',
      'Percentual de bugs resolvidos comparado com os itens em aberto no último mês.',
      'Mensal'),
     ('kpi7', 'Taxa Automação Homologadas',
      'Percentual de cenários automatizados homologados (validados e funcionando) em relação ao total realizado no último mês.',
-     'Mensal')
+     'Mensal'),
+    ('kpi8', 'Bugs por Pontos Entregues',
+     'Relaciona os bugs abertos no mês de referência (mês da sprint mais recente) com os pontos entregues nas 2 últimas sprints concluídas.',
+     'Sprints')
 ) as k(kpi_key, title, description, kpi_type)
 on conflict (area_id, kpi_key) do nothing;
 

@@ -26,6 +26,11 @@ const DEFAULT_KPI_CONFIG = {
     description: 'Percentual de cenários automatizados homologados (validados e funcionando) em relação ao total realizado no último mês.',
     type: 'Mensal',
   },
+  kpi8: {
+    title: 'Bugs por Pontos Entregues',
+    description: 'Relaciona os bugs abertos no mês de referência (mês da sprint mais recente) com os pontos entregues nas 2 últimas sprints concluídas.',
+    type: 'Sprints',
+  },
 };
 
 // Dados de exemplo, iguais aos da planilha original, usados apenas na primeira carga.
@@ -77,7 +82,8 @@ function buildDefaultState() {
       automation: defaultAutomationRows(),
       bugs: defaultBugRows(name),
       squad: defaultSquadRows(),
-      cycleTime: 3,
+      cycleTimeDays: 2,
+      cycleTimeHours: 3,
       kpis: JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG)),
     };
   });
@@ -170,7 +176,10 @@ function hydrateStateFromSupabase(remote) {
   const { areas, automation, bugs, squad, kpiConfigs } = remote;
   areaIdByName = {};
   const cycleTimeByName = {};
-  areas.forEach((a) => { areaIdByName[a.name] = a.id; cycleTimeByName[a.name] = a.cycle_time ?? ''; });
+  areas.forEach((a) => {
+    areaIdByName[a.name] = a.id;
+    cycleTimeByName[a.name] = { days: a.cycle_time_days ?? '', hours: a.cycle_time_hours ?? '' };
+  });
 
   const data = {};
   AREA_NAMES.forEach((name) => {
@@ -211,7 +220,8 @@ function hydrateStateFromSupabase(remote) {
       automation: autoRows.length ? autoRows : defaultAutomationRows(),
       bugs: bugRows.length ? bugRows : defaultBugRows(name),
       squad: squadRows.length ? squadRows : defaultSquadRows(),
-      cycleTime: cycleTimeByName[name] ?? '',
+      cycleTimeDays: cycleTimeByName[name] ? cycleTimeByName[name].days : '',
+      cycleTimeHours: cycleTimeByName[name] ? cycleTimeByName[name].hours : '',
       kpis,
     };
   });
@@ -273,7 +283,7 @@ async function persistState(opts = {}) {
       for (const name of AREA_NAMES) {
         const areaId = areaIdByName[name];
         const areaData = state.data[name];
-        await window.DataStore.saveAreaData(areaId, name, areaData.automation, areaData.bugs, areaData.squad, areaData.cycleTime, areaData.kpis);
+        await window.DataStore.saveAreaData(areaId, name, areaData.automation, areaData.bugs, areaData.squad, { days: areaData.cycleTimeDays, hours: areaData.cycleTimeHours }, areaData.kpis);
       }
 
       updateConnectionStatus('ok', 'Conectado ao Supabase');
@@ -330,9 +340,8 @@ function renderAutomationMetrics() {
   const cards = [
     metricCard({ icon: '📋', iconCls: 'blue', label: 'Total Planejado', value: formatInt(totalPlanned), caption: 'Automações planejadas' }),
     metricCard({ icon: '✅', iconCls: 'green', label: 'Total Realizado', value: formatInt(totalRealized), caption: 'Automações realizadas' }),
-    metricCard({ icon: '%', iconCls: 'blue', label: '% Geral Automatizado', value: formatPercent(overallPct), caption: 'Percentual do planejado' }),
     metricCard({ icon: '🛡️', iconCls: 'green', label: 'Automações Homologadas', value: formatInt(homolog.totalHomologated), caption: 'Automações homologadas' }),
-    metricCard({ icon: '🎯', iconCls: 'green', label: 'Taxa de Efetividade Geral', value: formatPercent(homolog.rate), caption: 'Taxa de efetividade' }),
+    metricCard({ icon: '%', iconCls: 'blue', label: '% Geral Automatizado', value: formatPercent(overallPct), caption: 'Percentual do planejado' }),
   ];
   document.getElementById('automationMetrics').innerHTML = cards.join('');
 }
@@ -344,53 +353,66 @@ function renderBugsMetrics() {
   const backlog = totalOpened - totalResolved;
 
   const cards = [
-    metricCard({ icon: '🐛', iconCls: 'orange', label: 'Bugs Abertos', value: formatInt(totalOpened), caption: 'Bugs em aberto' }),
-    metricCard({ icon: '✅', iconCls: 'green', label: 'Bugs Resolvidos', value: formatInt(totalResolved), caption: 'Bugs resolvidos' }),
+    metricCard({ icon: '🐛', iconCls: 'orange', label: 'Total de Bugs Abertos', value: formatInt(totalOpened), caption: 'Bugs em aberto' }),
+    metricCard({ icon: '✅', iconCls: 'green', label: 'Total de Bugs Resolvidos', value: formatInt(totalResolved), caption: 'Bugs resolvidos' }),
     metricCard({ icon: '⚠️', iconCls: backlog > 0 ? 'red' : 'green', label: 'Backlog Atual', value: formatInt(backlog), caption: 'Bugs pendentes' }),
   ];
   document.getElementById('bugsMetrics').innerHTML = cards.join('');
 }
 
-/** Card de metrica com valor editavel (usado no Cycle Time) */
-function editableMetricCard({ icon, iconCls, label, field, value, caption, placeholder = '—' }) {
+/** Card de Cycle Time: dois campos editaveis lado a lado (dias e horas), ex: "2d 3h" */
+function cycleTimeCard({ days, hours }) {
   return `
     <div class="metric-card">
-      <div class="metric-icon ${iconCls}">${icon}</div>
-      <div class="metric-label">${label}</div>
-      <input type="number" min="0" step="0.1" class="metric-value-input" data-metric-field="${field}" value="${value ?? ''}" placeholder="${placeholder}" />
-      <div class="metric-caption">${caption}</div>
+      <div class="metric-icon orange">⏱️</div>
+      <div class="metric-label">Cycle Time</div>
+      <div class="cycle-time-row">
+        <input type="number" min="0" step="1" class="metric-value-input cycle-time-input" data-metric-field="cycleTimeDays" value="${days ?? ''}" placeholder="0" />
+        <span class="cycle-time-unit">d</span>
+        <input type="number" min="0" step="1" class="metric-value-input cycle-time-input" data-metric-field="cycleTimeHours" value="${hours ?? ''}" placeholder="0" />
+        <span class="cycle-time-unit">h</span>
+      </div>
+      <div class="metric-caption">Dias e horas (editável)</div>
     </div>
   `;
 }
 
 function renderAgilityMetrics() {
-  const { squad, cycleTime } = currentAreaData();
-  const agg = window.KpiCalc.aggregateSquad(squad);
-  const lastDelivered = window.KpiCalc.lastSprintsDelivered(squad, 2);
+  const { squad, cycleTimeDays, cycleTimeHours } = currentAreaData();
+  const agg = window.KpiCalc.lastSprintsAggregate(squad, 2);
   const vel = window.KpiCalc.velocity(squad, 2);
+  const variationLabel = agg.variation > 0.0005 ? 'acima do planejado'
+    : agg.variation < -0.0005 ? 'abaixo do planejado'
+    : 'alinhado ao planejado';
+  const variationSign = agg.variation > 0 ? '+' : agg.variation < 0 ? '-' : '';
 
   const cards = [
-    metricCard({ icon: '📌', iconCls: 'blue', label: 'Pontos Planejados', value: formatInt(agg.totalPlanned), caption: 'Total no período' }),
-    metricCard({ icon: '✅', iconCls: 'green', label: 'Pontos Entregues', value: formatInt(lastDelivered), caption: '2 últimas sprints entregues' }),
-    metricCard({ icon: '🎯', iconCls: agg.rate >= 0.8 ? 'green' : agg.rate >= 0.5 ? 'orange' : 'red', label: '% de Entrega', value: formatPercent(agg.rate), caption: 'Entregue vs planejado' }),
+    metricCard({ icon: '📌', iconCls: 'blue', label: 'Pontos Planejados', value: formatInt(agg.totalPlanned), caption: '2 últimas sprints entregues' }),
+    metricCard({ icon: '✅', iconCls: 'green', label: 'Pontos Entregues', value: formatInt(agg.totalDelivered), caption: '2 últimas sprints entregues' }),
+    metricCard({
+      icon: '🎯',
+      iconCls: agg.variation >= 0 ? 'green' : 'red',
+      label: '% de Entrega',
+      value: `${variationSign}${formatPercent(Math.abs(agg.variation))}`,
+      caption: variationLabel,
+    }),
     metricCard({ icon: '⚡', iconCls: 'blue', label: 'Velocity', value: vel === null ? '—' : formatInt(Math.round(vel)), caption: '2 últimas sprints entregues' }),
-    editableMetricCard({ icon: '⏱️', iconCls: 'orange', label: 'Cycle Time', field: 'cycleTime', value: cycleTime, caption: 'Dias (editável)' }),
+    cycleTimeCard({ days: cycleTimeDays, hours: cycleTimeHours }),
   ];
   document.getElementById('agilityMetrics').innerHTML = cards.join('');
 
-  const cycleInput = document.querySelector('[data-metric-field="cycleTime"]');
-  if (cycleInput) {
-    cycleInput.addEventListener('input', (e) => {
+  document.querySelectorAll('.cycle-time-input').forEach((input) => {
+    input.addEventListener('input', (e) => {
       let value = e.target.value;
       if (value !== '' && Number(value) < 0) {
         showToast('Não é permitido usar números negativos.', 'error');
         value = '0';
         e.target.value = '0';
       }
-      currentAreaData().cycleTime = value;
+      currentAreaData()[e.target.dataset.metricField] = value;
       scheduleAutosave();
     });
-  }
+  });
 }
 
 // ------------------------------- RENDER: CHARTS -------------------------------
@@ -517,7 +539,7 @@ function renderCharts() {
   });
 
   // ------ Gráfico de pizza (doughnut): Taxa Mensal de Efetividade Automatizado ------
-  // Usa somente o ultimo mes preenchido (nao o acumulado - esse fica no card "Taxa de Efetividade Geral")
+  // Usa somente o ultimo mes preenchido (nao o acumulado)
   const monthly = window.KpiCalc.lastMonthHomologation(automation);
   const naoHomologadas = monthly ? Math.max(monthly.realized - monthly.homologated, 0) : 0;
   const hasData = Boolean(monthly && monthly.realized > 0);
@@ -609,13 +631,14 @@ function rateColorClass(rate) {
 }
 
 function renderKpis() {
-  const { automation, bugs } = currentAreaData();
+  const { automation, bugs, squad } = currentAreaData();
   const C = window.KpiCalc;
 
   const kpi1 = C.kpi1MonthlyGrowth(automation);
   const kpi3 = C.kpi3MonthlyEfficiency(automation);
   const kpi5 = C.kpi5MonthlyResolution(bugs);
   const kpi7 = C.kpi7MonthlyHomologationRate(automation);
+  const kpi8 = C.bugsPerDeliveredPoints(squad, bugs, 2);
 
   const automationBlocks = [];
   const bugBlocks = [];
@@ -632,16 +655,17 @@ function renderKpis() {
     `));
   }
 
-  // KPI 3 — eficiencia atual + diferenca em pontos percentuais vs mes anterior
+  // KPI 3 — exibe SOMENTE a variacao em pontos percentuais vs mes anterior (nao a eficiencia bruta)
   {
     const diffPP = kpi3 ? kpi3.diffPP : null;
     const t = trendArrow(diffPP);
     const cls = diffPP === null ? '' : diffPP >= 0 ? 'positive' : 'negative';
     automationBlocks.push(kpiListItem('kpi3', `
-      <div class="kpi-list-value ${cls}">${kpi3 ? formatPercent(kpi3.current, { decimals: 2 }) : '—'}</div>
-      <div class="kpi-phrase">
-        <span class="kpi-trend ${t.cls}">${t.symbol}</span> ${formatPP(diffPP)} vs mês anterior
+      <div class="kpi-list-value ${cls}">
+        ${formatPP(diffPP)}
+        <span class="kpi-trend ${t.cls}">${t.symbol}</span>
       </div>
+      <div class="kpi-phrase">vs mês anterior</div>
     `));
   }
 
@@ -659,6 +683,23 @@ function renderKpis() {
     bugBlocks.push(kpiListItem('kpi5', `
       <div class="kpi-list-value ${cls}">${formatPercent(kpi5)}</div>
     `));
+  }
+
+  // KPI 8 — Bugs por Pontos Entregues (bugs abertos no mes de referencia / pontos das 2 ultimas sprints)
+  {
+    if (!kpi8) {
+      bugBlocks.push(kpiListItem('kpi8', '<div class="kpi-list-value">—</div><div class="kpi-phrase">Dados insuficientes (cadastre sprints com data de fim na Tabela 3)</div>'));
+    } else {
+      const per100Cls = kpi8.per100 === null ? '' : kpi8.per100 <= 10 ? 'rate-green' : kpi8.per100 <= 20 ? 'rate-orange' : 'rate-red';
+      const per100Text = kpi8.per100 === null ? '—' : new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(kpi8.per100);
+      const perPointText = kpi8.perPoint === null ? '—' : new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(kpi8.perPoint);
+      const summary = `Foram encontrados ${formatInt(kpi8.bugsOpened)} bugs para ${formatInt(kpi8.totalPoints)} pontos entregues, resultando em uma taxa de ${per100Text} bugs para cada 100 pontos entregues.`;
+      bugBlocks.push(kpiListItem('kpi8', `
+        <div class="kpi-list-value ${per100Cls}">${per100Text} <span class="kpi-list-value-unit">bugs / 100 pts</span></div>
+        <div class="kpi-phrase">Pontos entregues (2 últimas sprints): ${formatInt(kpi8.totalPoints)} · Bugs abertos (${kpi8.refMonth}): ${formatInt(kpi8.bugsOpened)} · Bugs por ponto: ${perPointText}</div>
+        <div class="kpi-phrase">${summary}</div>
+      `));
+    }
   }
 
   document.getElementById('kpiListAutomation').innerHTML = automationBlocks.join('');

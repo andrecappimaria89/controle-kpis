@@ -162,7 +162,10 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows
     (async () => {
       const { error } = await supabaseClient
         .from('areas')
-        .update({ cycle_time: cycleTime === '' || cycleTime === undefined ? null : cycleTime })
+        .update({
+          cycle_time_days: cycleTime && cycleTime.days !== '' && cycleTime.days !== undefined ? cycleTime.days : null,
+          cycle_time_hours: cycleTime && cycleTime.hours !== '' && cycleTime.hours !== undefined ? cycleTime.hours : null,
+        })
         .eq('id', areaId);
       if (error) throw error;
     })(),

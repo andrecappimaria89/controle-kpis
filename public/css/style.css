@@ -271,6 +271,26 @@ main {
   background: var(--surface);
   outline: none;
 }
+
+.cycle-time-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 4px;
+}
+.cycle-time-input {
+  width: 44px;
+  flex: none;
+  margin: 0;
+  text-align: right;
+}
+.cycle-time-unit {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-right: 6px;
+}
 .metric-caption {
   font-size: 11px;
   color: var(--text-faint);
@@ -333,6 +353,12 @@ main {
 .kpi-list-value.rate-red { color: var(--red); }
 .kpi-list-value.rate-orange { color: var(--orange); }
 .kpi-list-value.rate-green { color: var(--green); }
+.kpi-list-value-unit {
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
 
 .kpi-trend { font-size: 15px; }
 .kpi-trend.up { color: var(--green); }

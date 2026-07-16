@@ -73,20 +73,18 @@ function aggregateHomologation(automationRows) {
   return { totalRealized, totalHomologated, rate };
 }
 
-/** Agregado da Tabela 3 (Volumetria Squad) para o painel de Agilidade */
-function aggregateSquad(squadRows) {
-  const filled = (squadRows || []).filter((r) => isNum(r.pointsPlanned) || isNum(r.pointsDelivered));
-  const totalPlanned = filled.reduce((acc, r) => acc + (toNum(r.pointsPlanned) || 0), 0);
-  const totalDelivered = filled.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
-  const rate = totalPlanned ? totalDelivered / totalPlanned : 0;
-  return { totalPlanned, totalDelivered, rate };
-}
-
-/** Soma de Pontos Entregues nas ultimas N sprints preenchidas (padrao: 2) */
-function lastSprintsDelivered(squadRows, n = 2) {
+/**
+ * Soma de Pontos Planejados e Entregues APENAS nas ultimas N sprints preenchidas
+ * (padrao: 2). Substituiu o antigo "aggregateSquad" (que somava o periodo todo).
+ * variation = quanto o entregue ficou acima/abaixo do planejado nessas sprints.
+ */
+function lastSprintsAggregate(squadRows, n = 2) {
   const filled = (squadRows || []).filter((r) => isNum(r.pointsPlanned) || isNum(r.pointsDelivered));
   const lastN = filled.slice(Math.max(0, filled.length - n));
-  return lastN.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
+  const totalPlanned = lastN.reduce((acc, r) => acc + (toNum(r.pointsPlanned) || 0), 0);
+  const totalDelivered = lastN.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
+  const variation = totalPlanned ? (totalDelivered - totalPlanned) / totalPlanned : 0;
+  return { totalPlanned, totalDelivered, variation };
 }
 
 /** Velocity: media de pontos entregues nas ultimas N sprints preenchidas (padrao: 2) */
@@ -96,6 +94,46 @@ function velocity(squadRows, n = 2) {
   if (!lastN.length) return null;
   const sum = lastN.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
   return sum / lastN.length;
+}
+
+const MONTH_CYCLE = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+/** Converte uma data (YYYY-MM-DD) na abreviacao de mes usada nas Tabelas 1/2 (ex: 'Jun') */
+function monthAbbrevFromDate(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return MONTH_CYCLE[d.getMonth()];
+}
+
+// ---------------------------------------------------------------------------
+// KPI 8 - Bugs por Pontos Entregues
+// 1) Pega as 2 ultimas sprints concluidas (por data de fim)
+// 2) Soma os pontos entregues dessas sprints
+// 3) Mes de referencia = mes da data de fim da sprint mais recente
+// 4) Bugs Abertos do mes de referencia / Soma dos pontos entregues
+// ---------------------------------------------------------------------------
+function bugsPerDeliveredPoints(squadRows, bugRows, n = 2) {
+  const filledSquad = (squadRows || [])
+    .filter((r) => r.endDate && (isNum(r.pointsPlanned) || isNum(r.pointsDelivered)))
+    .slice()
+    .sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
+  if (!filledSquad.length) return null;
+
+  const lastN = filledSquad.slice(Math.max(0, filledSquad.length - n));
+  const totalPoints = lastN.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
+
+  const mostRecent = filledSquad[filledSquad.length - 1];
+  const refMonth = monthAbbrevFromDate(mostRecent.endDate);
+  if (!refMonth) return null;
+
+  const bugRow = (bugRows || []).find((r) => r.month === refMonth);
+  const bugsOpened = bugRow ? (toNum(bugRow.opened) || 0) : 0;
+
+  const perPoint = totalPoints ? bugsOpened / totalPoints : null;
+  const per100 = perPoint === null ? null : perPoint * 100;
+
+  return { refMonth, totalPoints, bugsOpened, perPoint, per100 };
 }
 
 // ---------------------------------------------------------------------------
@@ -249,9 +287,10 @@ window.KpiCalc = {
   kpi7MonthlyHomologationRate,
   aggregateHomologation,
   lastMonthHomologation,
-  aggregateSquad,
-  lastSprintsDelivered,
+  lastSprintsAggregate,
   velocity,
+  bugsPerDeliveredPoints,
+  monthAbbrevFromDate,
   trend,
 };
 })();
