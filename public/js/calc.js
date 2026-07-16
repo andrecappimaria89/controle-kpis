@@ -44,13 +44,18 @@ function homologationRate(realized, homologated) {
   return Math.min(h / r, 1); // nunca pode passar de 100%
 }
 
-/** Retorna somente as linhas cujo campo "realized" esta preenchido (usado tambem para homologacao) */
+/** true se a linha deve entrar nos calculos: precisa estar marcada como "incluir" (padrao: sim, para compatibilidade com dados antigos sem esse campo) */
+function isRowActive(r) {
+  return r.active !== false;
+}
+
+/** Retorna somente as linhas MARCADAS ("incluir no calculo") e com o campo "realized" preenchido */
 function filledAutomationRows(rows, requirePlanned = false) {
-  return rows.filter((r) => isNum(r.realized) && (!requirePlanned || isNum(r.planned)));
+  return rows.filter((r) => isRowActive(r) && isNum(r.realized) && (!requirePlanned || isNum(r.planned)));
 }
 
 function filledBugRows(rows) {
-  return rows.filter((r) => isNum(r.opened) || isNum(r.resolved));
+  return rows.filter((r) => isRowActive(r) && (isNum(r.opened) || isNum(r.resolved)));
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +132,7 @@ function bugsPerDeliveredPoints(squadRows, bugRows, n = 2) {
   const refMonth = monthAbbrevFromDate(mostRecent.endDate);
   if (!refMonth) return null;
 
-  const bugRow = (bugRows || []).find((r) => r.month === refMonth);
+  const bugRow = (bugRows || []).find((r) => r.month === refMonth && isRowActive(r));
   const bugsOpened = bugRow ? (toNum(bugRow.opened) || 0) : 0;
 
   const perPoint = totalPoints ? bugsOpened / totalPoints : null;
@@ -271,6 +276,7 @@ function trend(value) {
 window.KpiCalc = {
   isNum,
   toNum,
+  isRowActive,
   automationPercentage,
   resolutionRate,
   homologationRate,

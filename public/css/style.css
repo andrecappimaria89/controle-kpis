@@ -465,14 +465,45 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
   padding: 16px 18px 10px;
 }
 .table-card-head h3 { font-size: 14px; font-weight: 800; }
+
+.table-card-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.month-picker {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12.5px;
+  padding: 7px 8px;
+}
+
+.btn-collapse {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+  line-height: 1;
+  transition: transform .15s ease;
+}
+.btn-collapse:hover { background: var(--surface); }
+.table-card.collapsed .btn-collapse { transform: rotate(-90deg); }
+.table-card.collapsed .table-scroll { display: none; }
 
 .btn-add { background: var(--blue-light); color: var(--blue); font-size: 12.5px; padding: 7px 12px; }
 .btn-add:hover { background: #c7dbfd; }
 
 .table-scroll { overflow-x: auto; padding: 0 18px 16px; }
+
+.row-include-checkbox { width: 17px; height: 17px; cursor: pointer; accent-color: var(--blue); }
+.data-table tbody tr.row-inactive { opacity: 0.45; }
 
 .data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .data-table thead th {

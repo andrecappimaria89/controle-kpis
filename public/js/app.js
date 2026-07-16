@@ -36,11 +36,11 @@ const DEFAULT_KPI_CONFIG = {
 // Dados de exemplo, iguais aos da planilha original, usados apenas na primeira carga.
 function defaultAutomationRows() {
   return [
-    { month: 'Mar', flow: 3, planned: 30, realized: 10, homologated: 8, toAnalyze: 2 },
-    { month: 'Abr', flow: 4, planned: 32, realized: 15, homologated: 11, toAnalyze: 3 },
-    { month: 'Mai', flow: 4, planned: 35, realized: 16, homologated: 13, toAnalyze: 1 },
-    { month: 'Jun', flow: '', planned: '', realized: '', homologated: '', toAnalyze: '' },
-    { month: 'Jul', flow: '', planned: '', realized: '', homologated: '', toAnalyze: '' },
+    { month: 'Mar', flow: 3, planned: 30, realized: 10, homologated: 8, toAnalyze: 2, active: true },
+    { month: 'Abr', flow: 4, planned: 32, realized: 15, homologated: 11, toAnalyze: 3, active: true },
+    { month: 'Mai', flow: 4, planned: 35, realized: 16, homologated: 13, toAnalyze: 1, active: true },
+    { month: 'Jun', flow: '', planned: '', realized: '', homologated: '', toAnalyze: '', active: true },
+    { month: 'Jul', flow: '', planned: '', realized: '', homologated: '', toAnalyze: '', active: true },
   ];
 }
 
@@ -71,7 +71,7 @@ function defaultBugRows(areaName) {
   const filled = DEFAULT_BUGS_BY_AREA[areaName] || [];
   return months.map((month, idx) => {
     const pair = filled[idx];
-    return { month, opened: pair ? pair[0] : '', resolved: pair ? pair[1] : '' };
+    return { month, opened: pair ? pair[0] : '', resolved: pair ? pair[1] : '', active: true };
   });
 }
 
@@ -200,10 +200,11 @@ function hydrateStateFromSupabase(remote) {
         realized: r.realized ?? '',
         homologated: r.homologated ?? '',
         toAnalyze: r.to_analyze ?? '',
+        active: r.active !== false,
       }));
     const bugRows = bugs
       .filter((r) => r.area_id === areaId)
-      .map((r) => ({ month: r.month, opened: r.opened ?? '', resolved: r.resolved ?? '' }));
+      .map((r) => ({ month: r.month, opened: r.opened ?? '', resolved: r.resolved ?? '', active: r.active !== false }));
     const squadRows = (squad || [])
       .filter((r) => r.area_id === areaId)
       .map((r) => ({
@@ -742,8 +743,10 @@ function renderAutomationTable() {
   const tbody = document.querySelector('#automationTable tbody');
   tbody.innerHTML = rows.map((r, idx) => {
     const pct = window.KpiCalc.automationPercentage(r.planned, r.realized);
+    const active = r.active !== false;
     return `
-      <tr data-idx="${idx}">
+      <tr data-idx="${idx}" class="${active ? '' : 'row-inactive'}">
+        <td><input type="checkbox" class="row-include-checkbox" data-table="automation" data-idx="${idx}" data-field="active" ${active ? 'checked' : ''} title="Incluir este mês nos cálculos" /></td>
         <td class="month-label">${r.month}</td>
         <td><input type="number" min="0" class="cell-input flow" data-table="automation" data-idx="${idx}" data-field="flow" value="${r.flow ?? ''}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input planned" data-table="automation" data-idx="${idx}" data-field="planned" value="${r.planned}" placeholder="—" /></td>
@@ -755,6 +758,7 @@ function renderAutomationTable() {
       </tr>
     `;
   }).join('');
+  populateMonthPicker('automationMonthPicker', rows);
 }
 
 function renderBugsTable() {
@@ -762,8 +766,10 @@ function renderBugsTable() {
   const tbody = document.querySelector('#bugsTable tbody');
   tbody.innerHTML = rows.map((r, idx) => {
     const rate = window.KpiCalc.resolutionRate(r.opened, r.resolved);
+    const active = r.active !== false;
     return `
-      <tr data-idx="${idx}">
+      <tr data-idx="${idx}" class="${active ? '' : 'row-inactive'}">
+        <td><input type="checkbox" class="row-include-checkbox" data-table="bugs" data-idx="${idx}" data-field="active" ${active ? 'checked' : ''} title="Incluir este mês nos cálculos" /></td>
         <td class="month-label">${r.month}</td>
         <td><input type="number" min="0" class="cell-input opened" data-table="bugs" data-idx="${idx}" data-field="opened" value="${r.opened}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input resolved" data-table="bugs" data-idx="${idx}" data-field="resolved" value="${r.resolved}" placeholder="—" /></td>
@@ -772,6 +778,7 @@ function renderBugsTable() {
       </tr>
     `;
   }).join('');
+  populateMonthPicker('bugsMonthPicker', rows);
 }
 
 function renderSquadTable() {
@@ -844,24 +851,51 @@ function bindTableEvents() {
       renderAll();
     });
   });
+
+  document.querySelectorAll('.row-include-checkbox').forEach((checkbox) => {
+    checkbox.addEventListener('change', (e) => {
+      const { table, idx } = e.target.dataset;
+      currentAreaData()[table][idx].active = e.target.checked;
+      e.target.closest('tr').classList.toggle('row-inactive', !e.target.checked);
+      scheduleAutosave();
+      renderAutomationMetrics();
+      renderBugsMetrics();
+      renderAgilityMetrics();
+      renderKpis();
+      if (state.page === 'dashboard') renderCharts();
+    });
+  });
 }
 
 // --------------------------------- ADD MONTH ----------------------------------
-function nextMonth(rows) {
-  if (!rows.length) return MONTH_CYCLE[0];
-  const last = rows[rows.length - 1].month;
-  const cycleIdx = MONTH_CYCLE.indexOf(last);
-  const nextIdx = cycleIdx === -1 ? 0 : (cycleIdx + 1) % MONTH_CYCLE.length;
-  return MONTH_CYCLE[nextIdx];
+/** Preenche o seletor de mes com apenas os meses ainda NAO cadastrados nessa tabela */
+function populateMonthPicker(selectId, rows) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const available = availableMonths(rows);
+  if (!available.length) {
+    select.innerHTML = '<option value="">Todos os meses cadastrados</option>';
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  select.innerHTML = available.map((m) => `<option value="${m}">${m}</option>`).join('');
 }
 
-function addMonth(table) {
+/** Meses do ciclo que ainda NAO existem nessa tabela (para popular o seletor de mes) */
+function availableMonths(rows) {
+  const used = new Set((rows || []).map((r) => r.month));
+  return MONTH_CYCLE.filter((m) => !used.has(m));
+}
+
+function addMonth(table, chosenMonth) {
   const areaData = currentAreaData();
-  const month = nextMonth(areaData[table]);
+  const month = chosenMonth || availableMonths(areaData[table])[0];
+  if (!month) return; // todos os 12 meses ja foram cadastrados nessa tabela
   if (table === 'automation') {
-    areaData.automation.push({ month, flow: '', planned: '', realized: '', homologated: '', toAnalyze: '' });
+    areaData.automation.push({ month, flow: '', planned: '', realized: '', homologated: '', toAnalyze: '', active: true });
   } else {
-    areaData.bugs.push({ month, opened: '', resolved: '' });
+    areaData.bugs.push({ month, opened: '', resolved: '', active: true });
   }
   scheduleAutosave();
   renderAll();
@@ -982,11 +1016,25 @@ async function init() {
   document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
   document.querySelectorAll('[data-add]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (btn.dataset.add === 'squad') addSquadRow();
-      else addMonth(btn.dataset.add);
+      const table = btn.dataset.add;
+      if (table === 'squad') {
+        addSquadRow();
+        return;
+      }
+      const pickerId = table === 'automation' ? 'automationMonthPicker' : 'bugsMonthPicker';
+      const picker = document.getElementById(pickerId);
+      const chosenMonth = picker && picker.value ? picker.value : null;
+      addMonth(table, chosenMonth);
     });
   });
   bindPageToggle();
+
+  document.querySelectorAll('[data-collapse]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const card = document.getElementById(btn.dataset.collapse);
+      if (card) card.classList.toggle('collapsed');
+    });
+  });
 
   // rede de seguranca final: garante que a ultima versao fique no navegador
   // mesmo se a aba for fechada antes do autosave (1.5s) disparar.

@@ -89,6 +89,7 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows
     homologated: r.homologated === '' || r.homologated === undefined ? null : r.homologated,
     homologation_rate: window.KpiCalc.homologationRate(r.realized, r.homologated),
     to_analyze: r.toAnalyze === '' || r.toAnalyze === undefined ? null : r.toAnalyze,
+    active: r.active !== false,
   }));
 
   const bugPayload = bugRows.map((r, idx) => ({
@@ -98,6 +99,7 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows
     opened: r.opened === '' ? null : r.opened,
     resolved: r.resolved === '' ? null : r.resolved,
     resolution_rate: window.KpiCalc.resolutionRate(r.opened, r.resolved),
+    active: r.active !== false,
   }));
 
   const squadPayload = (squadRows || []).map((r) => ({

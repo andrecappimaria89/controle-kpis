@@ -28,6 +28,7 @@ create table if not exists automation_metrics (
   homologated numeric,                      -- Automações Homologadas (validadas e funcionando)
   homologation_rate numeric,                -- Homologadas / Realizados (calculado no front-end)
   to_analyze numeric,                       -- Automações a Analisar
+  active     boolean not null default true, -- checkbox "Incluir" - se false, o mes fica de fora dos calculos
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (area_id, month)
@@ -55,6 +56,7 @@ create table if not exists bug_metrics (
   opened          numeric,                  -- Abertos
   resolved        numeric,                  -- Resolvidos
   resolution_rate numeric,                  -- Resolvidos / Abertos (calculado no front-end)
+  active     boolean not null default true, -- checkbox "Incluir" - se false, o mes fica de fora dos calculos
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
   unique (area_id, month)
