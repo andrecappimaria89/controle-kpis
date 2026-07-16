@@ -13,8 +13,8 @@ const DEFAULT_KPI_CONFIG = {
   },
   kpi3: {
     title: 'Eficiência vs Planejamento Mensal',
-    description: 'Compara a eficiência (Realizado/Planejado) do mês atual com o mês anterior, em pontos percentuais.',
-    type: 'Mensal',
+    description: 'Percentual de eficiência (Realizado/Planejado) referente ao mês mais recente cadastrado.',
+    type: 'Geral',
   },
   kpi5: {
     title: 'Taxa de Solução Mensal de Bugs',
@@ -117,6 +117,13 @@ function formatPP(v, { decimals = 2, fallback = '—' } = {}) {
   }).format(Math.abs(v));
   const sign = v > 0 ? '+' : v < 0 ? '-' : '';
   return `${sign}${formatted} p.p.`;
+}
+
+/** Formata uma diferenca inteira com sinal (ex: +15, -3) */
+function formatSignedInt(v, { fallback = '—' } = {}) {
+  if (v === null || v === undefined || Number.isNaN(v)) return fallback;
+  const sign = v > 0 ? '+' : v < 0 ? '-' : '';
+  return `${sign}${formatInt(Math.abs(v))}`;
 }
 
 function formatInt(v) {
@@ -381,20 +388,30 @@ function renderAgilityMetrics() {
   const { squad, cycleTimeDays, cycleTimeHours } = currentAreaData();
   const agg = window.KpiCalc.lastSprintsAggregate(squad, 2);
   const vel = window.KpiCalc.velocity(squad, 2);
-  const variationLabel = agg.variation > 0.0005 ? 'acima do planejado'
-    : agg.variation < -0.0005 ? 'abaixo do planejado'
-    : 'alinhado ao planejado';
-  const variationSign = agg.variation > 0 ? '+' : agg.variation < 0 ? '-' : '';
+
+  const ratio = agg.totalPlanned ? agg.totalDelivered / agg.totalPlanned : 0;
+  let deliveryValue;
+  let deliveryCaption;
+  let deliveryIconCls;
+  if (ratio > 1.0005) {
+    deliveryValue = formatPercent(ratio - 1);
+    deliveryCaption = 'acima do planejado';
+    deliveryIconCls = 'green';
+  } else {
+    deliveryValue = formatPercent(ratio);
+    deliveryCaption = 'entregue do planejado';
+    deliveryIconCls = ratio >= 0.8 ? 'green' : ratio >= 0.5 ? 'orange' : 'red';
+  }
 
   const cards = [
     metricCard({ icon: '📌', iconCls: 'blue', label: 'Pontos Planejados', value: formatInt(agg.totalPlanned), caption: '2 últimas sprints entregues' }),
     metricCard({ icon: '✅', iconCls: 'green', label: 'Pontos Entregues', value: formatInt(agg.totalDelivered), caption: '2 últimas sprints entregues' }),
     metricCard({
       icon: '🎯',
-      iconCls: agg.variation >= 0 ? 'green' : 'red',
+      iconCls: deliveryIconCls,
       label: '% de Entrega',
-      value: `${variationSign}${formatPercent(Math.abs(agg.variation))}`,
-      caption: variationLabel,
+      value: deliveryValue,
+      caption: deliveryCaption,
     }),
     metricCard({ icon: '⚡', iconCls: 'blue', label: 'Velocity', value: vel === null ? '—' : formatInt(Math.round(vel)), caption: '2 últimas sprints entregues' }),
     cycleTimeCard({ days: cycleTimeDays, hours: cycleTimeHours }),
@@ -613,8 +630,10 @@ function kpiListItem(key, resultHtml) {
   const cfg = currentAreaData().kpis[key];
   return `
     <div class="kpi-list-item" data-kpi="${key}">
-      <span class="kpi-type-badge">${escapeHtml(cfg.type)}</span>
-      <textarea class="kpi-title-input" rows="1" data-kpi-field="title" data-kpi="${key}">${escapeHtml(cfg.title)}</textarea>
+      <div class="kpi-list-header">
+        <textarea class="kpi-title-input" rows="1" data-kpi-field="title" data-kpi="${key}">${escapeHtml(cfg.title)}</textarea>
+        <span class="kpi-type-badge">${escapeHtml(cfg.type)}</span>
+      </div>
       <textarea class="kpi-desc-input" rows="2" data-kpi-field="description" data-kpi="${key}">${escapeHtml(cfg.description)}</textarea>
       ${resultHtml}
     </div>
@@ -634,8 +653,8 @@ function renderKpis() {
   const { automation, bugs, squad } = currentAreaData();
   const C = window.KpiCalc;
 
-  const kpi1 = C.kpi1MonthlyGrowth(automation);
-  const kpi3 = C.kpi3MonthlyEfficiency(automation);
+  const kpi1 = C.kpi1MonthlyDelta(automation);
+  const kpi3 = C.kpi3LastEfficiency(automation);
   const kpi5 = C.kpi5MonthlyResolution(bugs);
   const kpi7 = C.kpi7MonthlyHomologationRate(automation);
   const kpi8 = C.bugsPerDeliveredPoints(squad, bugs, 2);
@@ -643,29 +662,23 @@ function renderKpis() {
   const automationBlocks = [];
   const bugBlocks = [];
 
-  // KPI 1
+  // KPI 1 — diferenca absoluta (quantidade) de Realizados vs mes anterior, nao percentual
   {
     const t = trendArrow(kpi1);
     const cls = kpi1 === null ? '' : kpi1 >= 0 ? 'positive' : 'negative';
     automationBlocks.push(kpiListItem('kpi1', `
       <div class="kpi-list-value ${cls}">
-        ${formatPercent(kpi1, { signed: true })}
-        <span class="kpi-trend ${t.cls}">${t.symbol}</span>
-      </div>
-    `));
-  }
-
-  // KPI 3 — exibe SOMENTE a variacao em pontos percentuais vs mes anterior (nao a eficiencia bruta)
-  {
-    const diffPP = kpi3 ? kpi3.diffPP : null;
-    const t = trendArrow(diffPP);
-    const cls = diffPP === null ? '' : diffPP >= 0 ? 'positive' : 'negative';
-    automationBlocks.push(kpiListItem('kpi3', `
-      <div class="kpi-list-value ${cls}">
-        ${formatPP(diffPP)}
+        ${formatSignedInt(kpi1)}
         <span class="kpi-trend ${t.cls}">${t.symbol}</span>
       </div>
       <div class="kpi-phrase">vs mês anterior</div>
+    `));
+  }
+
+  // KPI 3 (Geral) — sempre o ultimo valor preenchido da coluna "%" da Tabela 1
+  {
+    automationBlocks.push(kpiListItem('kpi3', `
+      <div class="kpi-list-value">${formatPercent(kpi3)}</div>
     `));
   }
 
@@ -691,13 +704,10 @@ function renderKpis() {
       bugBlocks.push(kpiListItem('kpi8', '<div class="kpi-list-value">—</div><div class="kpi-phrase">Dados insuficientes (cadastre sprints com data de fim na Tabela 3)</div>'));
     } else {
       const per100Cls = kpi8.per100 === null ? '' : kpi8.per100 <= 10 ? 'rate-green' : kpi8.per100 <= 20 ? 'rate-orange' : 'rate-red';
-      const per100Text = kpi8.per100 === null ? '—' : new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(kpi8.per100);
-      const perPointText = kpi8.perPoint === null ? '—' : new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(kpi8.perPoint);
-      const summary = `Foram encontrados ${formatInt(kpi8.bugsOpened)} bugs para ${formatInt(kpi8.totalPoints)} pontos entregues, resultando em uma taxa de ${per100Text} bugs para cada 100 pontos entregues.`;
+      const pctText = kpi8.perPoint === null ? '—' : formatPercent(kpi8.perPoint, { decimals: 1 });
       bugBlocks.push(kpiListItem('kpi8', `
-        <div class="kpi-list-value ${per100Cls}">${per100Text} <span class="kpi-list-value-unit">bugs / 100 pts</span></div>
-        <div class="kpi-phrase">Pontos entregues (2 últimas sprints): ${formatInt(kpi8.totalPoints)} · Bugs abertos (${kpi8.refMonth}): ${formatInt(kpi8.bugsOpened)} · Bugs por ponto: ${perPointText}</div>
-        <div class="kpi-phrase">${summary}</div>
+        <div class="kpi-list-value ${per100Cls}">${pctText} <span class="kpi-list-value-unit">/ ${formatInt(kpi8.totalPoints)} pts</span></div>
+        <div class="kpi-phrase">Pontos entregues (2 últimas sprints): ${formatInt(kpi8.totalPoints)} · Bugs abertos (${kpi8.refMonth}): ${formatInt(kpi8.bugsOpened)}</div>
       `));
     }
   }

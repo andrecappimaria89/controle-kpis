@@ -137,17 +137,19 @@ function bugsPerDeliveredPoints(squadRows, bugRows, n = 2) {
 }
 
 // ---------------------------------------------------------------------------
-// KPI 1 - Crescimento mensal da automacao
-// ((Realizados ultimo mes preenchido - Realizados mes anterior) / Realizados mes anterior)
+// KPI 1 - Crescimento mensal da automacao (em QUANTIDADE, nao percentual)
+// Diferenca absoluta: Realizados do ultimo mes preenchido - Realizados do mes anterior
+// Ex: Jan=5, Fev=20 -> +15 vs mes anterior
 // ---------------------------------------------------------------------------
-function kpi1MonthlyGrowth(automationRows) {
+function kpi1MonthlyDelta(automationRows) {
   const filled = filledAutomationRows(automationRows);
   if (filled.length < 2) return null;
   const last = filled[filled.length - 1];
   const prev = filled[filled.length - 2];
+  const lastRealized = toNum(last.realized);
   const prevRealized = toNum(prev.realized);
-  if (!prevRealized) return null;
-  return (toNum(last.realized) - prevRealized) / prevRealized;
+  if (lastRealized === null || prevRealized === null) return null;
+  return lastRealized - prevRealized;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,20 +167,16 @@ function kpi2QuarterlyGrowth(automationRows) {
 }
 
 // ---------------------------------------------------------------------------
-// KPI 3 - Eficiencia vs planejamento mensal
-// Eficiencia = (Realizado / Planejado) * 100 para cada mes.
-// Resultado = eficiencia atual + diferenca em PONTOS PERCENTUAIS vs mes anterior
-// (NAO e crescimento percentual - e a diferenca direta entre as eficiencias).
+// KPI 3 - Eficiencia vs planejamento (GERAL)
+// Sempre retorna o ultimo valor preenchido da coluna "%" da Tabela 1
+// (Realizado / Planejado do mes mais recente) - nao e mais uma comparacao/diferenca.
 // ---------------------------------------------------------------------------
-function kpi3MonthlyEfficiency(automationRows) {
+function kpi3LastEfficiency(automationRows) {
   const filled = filledAutomationRows(automationRows, true);
-  if (filled.length < 2) return null;
+  if (filled.length === 0) return null;
   const last = filled[filled.length - 1];
-  const prev = filled[filled.length - 2];
-  if (!toNum(prev.planned) || !toNum(last.planned)) return null; // evita divisao por zero / eficiencia indefinida
-  const effCurrent = automationPercentage(last.planned, last.realized); // fracao, ex: 0.6286
-  const effPrevious = automationPercentage(prev.planned, prev.realized);
-  return { current: effCurrent, diffPP: (effCurrent - effPrevious) * 100 };
+  if (!toNum(last.planned)) return null;
+  return automationPercentage(last.planned, last.realized);
 }
 
 /** Homologacao apenas do ultimo mes preenchido (usado no grafico de pizza "mensal") */
@@ -276,9 +274,9 @@ window.KpiCalc = {
   homologationRate,
   filledAutomationRows,
   filledBugRows,
-  kpi1MonthlyGrowth,
+  kpi1MonthlyDelta,
   kpi2QuarterlyGrowth,
-  kpi3MonthlyEfficiency,
+  kpi3LastEfficiency,
   kpi4QuarterlyEfficiency,
   kpi4Phrase,
   kpi5MonthlyResolution,
