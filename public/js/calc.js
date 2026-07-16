@@ -137,9 +137,9 @@ function bugsPerDeliveredPoints(squadRows, bugRows, n = 2) {
 }
 
 // ---------------------------------------------------------------------------
-// KPI 1 - Crescimento mensal da automacao (em QUANTIDADE, nao percentual)
-// Diferenca absoluta: Realizados do ultimo mes preenchido - Realizados do mes anterior
-// Ex: Jan=5, Fev=20 -> +15 vs mes anterior
+// KPI 1 - Crescimento mensal da automacao
+// Retorna a diferenca absoluta (quantidade) E o percentual de crescimento
+// referente ao mes anterior. Ex: Jan=5, Fev=20 -> delta=+15, pct=+300%
 // ---------------------------------------------------------------------------
 function kpi1MonthlyDelta(automationRows) {
   const filled = filledAutomationRows(automationRows);
@@ -149,7 +149,9 @@ function kpi1MonthlyDelta(automationRows) {
   const lastRealized = toNum(last.realized);
   const prevRealized = toNum(prev.realized);
   if (lastRealized === null || prevRealized === null) return null;
-  return lastRealized - prevRealized;
+  const delta = lastRealized - prevRealized;
+  const pct = prevRealized ? delta / prevRealized : null; // fracao, ou null se mes anterior for 0
+  return { delta, pct };
 }
 
 // ---------------------------------------------------------------------------

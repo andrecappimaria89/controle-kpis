@@ -662,13 +662,15 @@ function renderKpis() {
   const automationBlocks = [];
   const bugBlocks = [];
 
-  // KPI 1 — diferenca absoluta (quantidade) de Realizados vs mes anterior, nao percentual
+  // KPI 1 — quantidade + percentual de crescimento vs mes anterior (ex: +1 | +20,0%)
   {
-    const t = trendArrow(kpi1);
-    const cls = kpi1 === null ? '' : kpi1 >= 0 ? 'positive' : 'negative';
+    const delta = kpi1 ? kpi1.delta : null;
+    const t = trendArrow(delta);
+    const cls = delta === null ? '' : delta >= 0 ? 'positive' : 'negative';
+    const pctText = kpi1 && kpi1.pct !== null ? ` | ${formatPercent(kpi1.pct, { signed: true })}` : '';
     automationBlocks.push(kpiListItem('kpi1', `
       <div class="kpi-list-value ${cls}">
-        ${formatSignedInt(kpi1)}
+        ${formatSignedInt(delta)}${pctText}
         <span class="kpi-trend ${t.cls}">${t.symbol}</span>
       </div>
       <div class="kpi-phrase">vs mês anterior</div>
@@ -933,7 +935,14 @@ function bindPageToggle() {
       });
       document.getElementById('pageDashboard').style.display = state.page === 'dashboard' ? '' : 'none';
       document.getElementById('pageCadastro').style.display = state.page === 'cadastro' ? '' : 'none';
-      if (state.page === 'dashboard') renderCharts(); // recria os graficos com o tamanho correto ao reexibir
+      if (state.page === 'dashboard') {
+        // ao reexibir o Dashboard, tanto os graficos quanto os textareas de
+        // titulo/descricao dos KPIs precisam ser recalculados: enquanto a
+        // pagina fica com display:none, scrollHeight = 0, entao o auto-grow
+        // "esquece" a altura certa e o texto aparece cortado ao voltar.
+        renderCharts();
+        renderKpis();
+      }
     });
   });
 }

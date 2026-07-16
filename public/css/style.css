@@ -298,7 +298,7 @@ main {
 }
 
 /* ------------------------ CHARTS + KPI LIST (per panel) --------------------- */
-.panel-content-row { display: grid; gap: 16px; align-items: start; }
+.panel-content-row { display: grid; gap: 16px; align-items: stretch; }
 .panel-content-3col { grid-template-columns: 1.25fr 1fr 0.95fr; }
 .panel-content-2col { grid-template-columns: 1.4fr 1fr; }
 
@@ -307,6 +307,9 @@ main {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 16px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 .chart-box-head {
   display: flex;
@@ -326,8 +329,8 @@ main {
   letter-spacing: 0.03em;
   color: var(--text-muted);
 }
-.chart-box-wrap { height: 260px; }
-.chart-box-wrap-tall { height: 280px; }
+.chart-box-wrap { flex: 1 1 auto; min-height: 210px; }
+.chart-box-wrap-tall { min-height: 260px; }
 
 /* ------------------------------- KPI LIST ITEMS ----------------------------- */
 .kpi-list-item {
