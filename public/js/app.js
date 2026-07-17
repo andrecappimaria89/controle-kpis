@@ -692,7 +692,7 @@ function renderKpis() {
     const delta = kpi1 ? kpi1.delta : null;
     const t = trendArrow(delta);
     const cls = delta === null ? '' : delta >= 0 ? 'positive' : 'negative';
-    const pctText = kpi1 && kpi1.pct !== null ? ` | ${formatPercent(kpi1.pct, { signed: true })}` : '';
+    const pctText = kpi1 && kpi1.pct !== null ? ` > ${formatPercent(kpi1.pct, { signed: true })}` : '';
     automationBlocks.push(kpiListItem('kpi1', `
       <div class="kpi-list-value ${cls}">
         ${formatSignedInt(delta)}${pctText}
@@ -727,13 +727,13 @@ function renderKpis() {
     } else {
       const t = trendArrow(kpi5.pct);
       const cls = kpi5.pct === null ? '' : kpi5.pct <= 0 ? 'positive' : 'negative'; // menos bugs abertos = positivo
-      const pctText = kpi5.pct !== null ? ` | ${formatPercent(kpi5.pct, { signed: true })}` : '';
+      const pctText = kpi5.pct !== null ? ` > ${formatPercent(kpi5.pct, { signed: true })}` : '';
       bugBlocks.push(kpiListItem('kpi5', `
         <div class="kpi-list-value ${cls}">
           ${formatInt(kpi5.opened)}${pctText}
           <span class="kpi-trend ${t.cls}">${t.symbol}</span>
         </div>
-        <div class="kpi-phrase">vs sprint anterior</div>
+        <div class="kpi-phrase">Bugs da Sprint e % da referente a sprint anterior</div>
       `));
     }
   }
