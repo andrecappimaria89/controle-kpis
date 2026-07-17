@@ -955,7 +955,6 @@ function renderAll() {
   if (state.page === 'dashboard') renderCharts();
   renderKpis();
   renderAutomationTable();
-  renderBugsTable();
   renderSquadTable();
   bindTableEvents();
 }
