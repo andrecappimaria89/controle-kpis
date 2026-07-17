@@ -110,12 +110,38 @@ function velocity(squadRows, n = 2) {
 // Resolvidos / Abertos da sprint mais recente (por Data Fim) com dado de bug
 // preenchido na Tabela 3 (max 100%)
 // ---------------------------------------------------------------------------
-function kpi5MonthlyResolution(squadRows) {
+/**
+ * Taxa de Bugs Aberto por Sprint = (Bugs Abertos / Pontos Entregues) * 100,
+ * usando a sprint mais recente (por Data Fim) que tenha Pontos Entregues.
+ */
+function bugsRatePerSprint(squadRows) {
+  const filled = (squadRows || [])
+    .filter((r) => r.endDate && isNum(r.pointsDelivered))
+    .slice()
+    .sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
+  if (!filled.length) return null;
+  const last = filled[filled.length - 1];
+  const pointsDelivered = toNum(last.pointsDelivered) || 0;
+  const bugsOpened = toNum(last.bugsOpened) || 0;
+  const rate = pointsDelivered ? (bugsOpened / pointsDelivered) * 100 : null;
+  return { bugsOpened, pointsDelivered, rate };
+}
+
+// ---------------------------------------------------------------------------
+// KPI 5 - Taxa de Abertura de Bugs por Sprint
+// Quantidade de bugs abertos na sprint mais recente + variacao percentual
+// (maior ou menor) em relacao a sprint anterior.
+// ---------------------------------------------------------------------------
+function kpi5BugsOpenedTrend(squadRows) {
   const filled = filledSquadBugRows(squadRows);
   if (filled.length === 0) return null;
   const last = filled[filled.length - 1];
-  const rate = resolutionRate(last.bugsOpened, last.bugsResolved);
-  return Math.min(rate, 1);
+  const opened = toNum(last.bugsOpened) || 0;
+  if (filled.length < 2) return { opened, pct: null };
+  const prev = filled[filled.length - 2];
+  const prevOpened = toNum(prev.bugsOpened) || 0;
+  const pct = prevOpened ? (opened - prevOpened) / prevOpened : null;
+  return { opened, pct };
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +307,7 @@ window.KpiCalc = {
   kpi3DeltaEfficiency,
   kpi4QuarterlyEfficiency,
   kpi4Phrase,
-  kpi5MonthlyResolution,
+  kpi5BugsOpenedTrend,
   kpi7MonthlyHomologationRate,
   lastCumulativeTotals,
   automationDeltaSeries,
@@ -289,6 +315,7 @@ window.KpiCalc = {
   lastSprintsAggregate,
   velocity,
   bugsGeneralResolutionRate,
+  bugsRatePerSprint,
   trend,
 };
 })();

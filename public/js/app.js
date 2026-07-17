@@ -17,8 +17,8 @@ const DEFAULT_KPI_CONFIG = {
     type: 'Geral',
   },
   kpi5: {
-    title: 'Taxa de Solução Mensal de Bugs',
-    description: 'Percentual de bugs resolvidos comparado com os itens em aberto na sprint mais recente.',
+    title: 'Taxa de Abertura de Bugs por Sprint',
+    description: 'Quantidade de bugs abertos na sprint mais recente e a variação percentual em relação à sprint anterior.',
     type: 'Mensal',
   },
   kpi7: {
@@ -95,6 +95,9 @@ function buildDefaultState() {
 let state = buildDefaultState();
 let areaIdByName = {}; // preenchido quando o Supabase esta configurado
 let charts = { automation: null, bugs: null, homologation: null, agility: null };
+
+/** Controla se titulo/descricao dos KPIs estao editaveis (fica travado por padrao) */
+let kpiEditMode = false;
 
 // -------------------------------- HELPERS ------------------------------------
 const { toNum, isNum } = window.KpiCalc;
@@ -326,12 +329,12 @@ function renderAreaTabs() {
 }
 
 // ------------------------------ RENDER: METRIC CARDS --------------------------
-function metricCard({ icon, iconCls, label, value, caption }) {
+function metricCard({ icon, iconCls, label, value, caption, valueCls = '' }) {
   return `
     <div class="metric-card">
       <div class="metric-icon ${iconCls}">${icon}</div>
       <div class="metric-label">${label}</div>
-      <div class="metric-value">${value}</div>
+      <div class="metric-value ${valueCls}">${value}</div>
       <div class="metric-caption">${caption}</div>
     </div>
   `;
@@ -366,6 +369,23 @@ function renderBugsMetrics() {
   document.getElementById('bugsMetrics').innerHTML = cards.join('');
 }
 
+/** Card "Taxa de Bugs Aberto por Sprint": N bug(s) > X,XX% de bugs na sprint */
+function bugsRateCard(bugsRate) {
+  if (!bugsRate || bugsRate.rate === null) {
+    return metricCard({ icon: '🐞', iconCls: 'orange', label: 'Taxa de Bugs por Sprint', value: '—', caption: 'Dados insuficientes' });
+  }
+  const rateText = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(bugsRate.rate);
+  const bugsLabel = `${formatInt(bugsRate.bugsOpened)} ${bugsRate.bugsOpened === 1 ? 'bug' : 'bugs'}`;
+  const iconCls = bugsRate.rate <= 10 ? 'green' : bugsRate.rate <= 20 ? 'orange' : 'red';
+  return metricCard({
+    icon: '🐞',
+    iconCls,
+    label: 'Taxa de Bugs por Sprint',
+    value: `${bugsLabel} > ${rateText}%`,
+    caption: 'de bugs na sprint',
+  });
+}
+
 /** Card de Cycle Time: dois campos editaveis lado a lado (dias e horas), ex: "2d 3h" */
 function cycleTimeCard({ days, hours }) {
   return `
@@ -387,15 +407,18 @@ function renderAgilityMetrics() {
   const { squad, cycleTimeDays, cycleTimeHours } = currentAreaData();
   const agg = window.KpiCalc.lastSprintsAggregate(squad, 2);
   const vel = window.KpiCalc.velocity(squad, 2);
+  const bugsRate = window.KpiCalc.bugsRatePerSprint(squad);
 
   const ratio = agg.totalPlanned ? agg.totalDelivered / agg.totalPlanned : 0;
   let deliveryValue;
   let deliveryCaption;
   let deliveryIconCls;
+  let deliveryValueCls = '';
   if (ratio > 1.0005) {
-    deliveryValue = formatPercent(ratio - 1);
+    deliveryValue = formatPercent(ratio - 1, { signed: true });
     deliveryCaption = 'acima do planejado';
     deliveryIconCls = 'green';
+    deliveryValueCls = 'positive'; // verde no texto SOMENTE quando esta acima do planejado
   } else {
     deliveryValue = formatPercent(ratio);
     deliveryCaption = 'entregue do planejado';
@@ -411,8 +434,10 @@ function renderAgilityMetrics() {
       label: '% de Entrega',
       value: deliveryValue,
       caption: deliveryCaption,
+      valueCls: deliveryValueCls,
     }),
     metricCard({ icon: '⚡', iconCls: 'blue', label: 'Velocity', value: vel === null ? '—' : formatInt(Math.round(vel)), caption: '2 últimas sprints entregues' }),
+    bugsRateCard(bugsRate),
     cycleTimeCard({ days: cycleTimeDays, hours: cycleTimeHours }),
   ];
   document.getElementById('agilityMetrics').innerHTML = cards.join('');
@@ -627,13 +652,14 @@ function escapeHtml(str) {
 
 function kpiListItem(key, resultHtml) {
   const cfg = currentAreaData().kpis[key];
+  const disabledAttr = kpiEditMode ? '' : 'disabled';
   return `
     <div class="kpi-list-item" data-kpi="${key}">
       <div class="kpi-list-header">
-        <textarea class="kpi-title-input" rows="1" data-kpi-field="title" data-kpi="${key}">${escapeHtml(cfg.title)}</textarea>
+        <textarea class="kpi-title-input" rows="1" data-kpi-field="title" data-kpi="${key}" ${disabledAttr}>${escapeHtml(cfg.title)}</textarea>
         <span class="kpi-type-badge">${escapeHtml(cfg.type)}</span>
       </div>
-      <textarea class="kpi-desc-input" rows="2" data-kpi-field="description" data-kpi="${key}">${escapeHtml(cfg.description)}</textarea>
+      <textarea class="kpi-desc-input" rows="2" data-kpi-field="description" data-kpi="${key}" ${disabledAttr}>${escapeHtml(cfg.description)}</textarea>
       ${resultHtml}
     </div>
   `;
@@ -654,7 +680,7 @@ function renderKpis() {
 
   const kpi1 = C.kpi1MonthlyDelta(automation);
   const kpi3 = C.kpi3DeltaEfficiency(automation);
-  const kpi5 = C.kpi5MonthlyResolution(squad);
+  const kpi5 = C.kpi5BugsOpenedTrend(squad);
   const kpi7 = C.kpi7MonthlyHomologationRate(automation);
   const kpi8 = C.bugsGeneralResolutionRate(squad);
 
@@ -679,8 +705,10 @@ function renderKpis() {
   // KPI 3 (Geral) — eficiencia calculada com a DIFERENCA entre o mes atual e o anterior
   {
     const cls = kpi3 === null ? '' : kpi3 >= 0 ? 'positive' : 'negative';
+    const phrase = kpi3 === null ? '<div class="kpi-phrase">Sem variação no Planejado entre os 2 últimos meses (÷0)</div>' : '';
     automationBlocks.push(kpiListItem('kpi3', `
       <div class="kpi-list-value ${cls}">${formatPercent(kpi3)}</div>
+      ${phrase}
     `));
   }
 
@@ -692,12 +720,22 @@ function renderKpis() {
     `));
   }
 
-  // KPI 5 — taxa de solucao mensal: cor por faixa (0-50% vermelho / 51-80% laranja / 81-100% verde)
+  // KPI 5 — quantidade de bugs abertos na sprint mais recente + variacao vs sprint anterior
   {
-    const cls = rateColorClass(kpi5);
-    bugBlocks.push(kpiListItem('kpi5', `
-      <div class="kpi-list-value ${cls}">${formatPercent(kpi5)}</div>
-    `));
+    if (!kpi5) {
+      bugBlocks.push(kpiListItem('kpi5', '<div class="kpi-list-value">—</div><div class="kpi-phrase">Dados insuficientes (cadastre Bugs Abertos na Tabela 3)</div>'));
+    } else {
+      const t = trendArrow(kpi5.pct);
+      const cls = kpi5.pct === null ? '' : kpi5.pct <= 0 ? 'positive' : 'negative'; // menos bugs abertos = positivo
+      const pctText = kpi5.pct !== null ? ` | ${formatPercent(kpi5.pct, { signed: true })}` : '';
+      bugBlocks.push(kpiListItem('kpi5', `
+        <div class="kpi-list-value ${cls}">
+          ${formatInt(kpi5.opened)}${pctText}
+          <span class="kpi-trend ${t.cls}">${t.symbol}</span>
+        </div>
+        <div class="kpi-phrase">vs sprint anterior</div>
+      `));
+    }
   }
 
   // KPI 8 — Taxa Geral de Resolucao de Bugs (soma de TODOS os bugs abertos/resolvidos na Tabela 3)
@@ -977,6 +1015,21 @@ async function init() {
   renderAll();
 
   document.getElementById('saveBtn').addEventListener('click', persistState);
+  document.getElementById('editKpisBtn').addEventListener('click', () => {
+    const btn = document.getElementById('editKpisBtn');
+    if (!kpiEditMode) {
+      // entra em modo de edicao: destrava os campos de titulo/descricao
+      kpiEditMode = true;
+      btn.textContent = '💾 Salvar KPIs';
+      renderKpis();
+    } else {
+      // salva e trava os campos de novo
+      kpiEditMode = false;
+      btn.textContent = '✎ Editar KPIs';
+      renderKpis();
+      persistState();
+    }
+  });
   document.getElementById('duplicateBtn').addEventListener('click', duplicateStructureToAllAreas);
   document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
   document.querySelectorAll('[data-add]').forEach((btn) => {
