@@ -162,6 +162,21 @@ function updateConnectionStatus(kind, text) {
 
 // -------------------------------- PERSISTENCIA --------------------------------
 async function loadInitialData() {
+  // Rede de seguranca: se a ultima sessao deixou alteracoes locais que ainda
+  // nao foram confirmadas no Supabase (ex: aba fechada antes do autosave
+  // terminar), usamos essas alteracoes agora e tentamos sincroniza-las,
+  // em vez de deixar o fetch do servidor sobrescreve-las silenciosamente.
+  const localBeforeFetch = window.DataStore.localLoad();
+  if (localBeforeFetch && localBeforeFetch.__dirty && window.DataStore.IS_SUPABASE_CONFIGURED) {
+    state = localBeforeFetch;
+    updateConnectionStatus('local', 'Sincronizando alterações pendentes…');
+    const synced = await persistState({ silent: true });
+    if (!synced) {
+      updateConnectionStatus('error', 'Alterações pendentes salvas apenas localmente — verifique sua conexão');
+    }
+    return;
+  }
+
   if (window.DataStore.IS_SUPABASE_CONFIGURED) {
     try {
       const remote = await window.DataStore.fetchAllData();
@@ -179,7 +194,7 @@ async function loadInitialData() {
     updateConnectionStatus('local', 'Supabase não configurado — modo local (localStorage)');
   }
 
-  const local = window.DataStore.localLoad();
+  const local = localBeforeFetch || window.DataStore.localLoad();
   if (local) state = local;
 }
 
@@ -249,6 +264,7 @@ let autosaveInFlight = false;
  * depois, para nao disparar uma chamada de rede a cada tecla digitada.
  */
 function scheduleAutosave() {
+  state.__dirty = true; // marca que ha alteracoes ainda nao confirmadas no Supabase
   window.DataStore.localSave(state); // rede de seguranca imediata, sempre
 
   if (!window.DataStore.IS_SUPABASE_CONFIGURED) return;
@@ -262,7 +278,7 @@ function scheduleAutosave() {
     } finally {
       autosaveInFlight = false;
     }
-  }, 1500);
+  }, 900);
 }
 
 /** Garante que temos o id de cada area antes de gravar; tenta buscar de novo se faltar. */
@@ -295,6 +311,10 @@ async function persistState(opts = {}) {
         const areaData = state.data[name];
         await window.DataStore.saveAreaData(areaId, name, areaData.automation, areaData.squad, { days: areaData.cycleTimeDays, hours: areaData.cycleTimeHours }, areaData.kpis);
       }
+
+      // sincronizacao completa: nao ha mais nada pendente para reenviar
+      state.__dirty = false;
+      window.DataStore.localSave(state);
 
       updateConnectionStatus('ok', 'Conectado ao Supabase');
       if (!silent) showToast('Alterações salvas no Supabase com sucesso!', 'success');
@@ -1056,6 +1076,15 @@ async function init() {
   // mesmo se a aba for fechada antes do autosave (1.5s) disparar.
   window.addEventListener('beforeunload', () => {
     window.DataStore.localSave(state);
+  });
+
+  // se o usuario trocar de aba/minimizar antes do debounce do autosave (900ms)
+  // terminar, tenta sincronizar agora mesmo em vez de esperar
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && state.__dirty) {
+      clearTimeout(autosaveTimer);
+      persistState({ silent: true });
+    }
   });
 }
 
