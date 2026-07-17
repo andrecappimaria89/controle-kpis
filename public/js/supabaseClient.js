@@ -47,12 +47,6 @@ async function fetchAllData() {
     .order('month_order', { ascending: true });
   if (autoErr) throw autoErr;
 
-  const { data: bugs, error: bugsErr } = await supabaseClient
-    .from('bug_metrics')
-    .select('*')
-    .order('month_order', { ascending: true });
-  if (bugsErr) throw bugsErr;
-
   const { data: squad, error: squadErr } = await supabaseClient
     .from('squad_metrics')
     .select('*')
@@ -64,7 +58,7 @@ async function fetchAllData() {
     .select('*');
   if (kpiErr) throw kpiErr;
 
-  return { areas, automation, bugs, squad, kpiConfigs };
+  return { areas, automation, squad, kpiConfigs };
 }
 
 /**
@@ -75,7 +69,7 @@ async function fetchAllData() {
  * na tela (ex: usuário excluiu um mês). Assim nunca existe um instante em
  * que a área fique com zero linhas no banco por causa de uma queda de rede.
  */
-async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows, cycleTime, kpiConfigs) {
+async function saveAreaData(areaId, areaName, automationRows, squadRows, cycleTime, kpiConfigs) {
   if (!supabaseClient) throw new Error('Supabase nao configurado');
 
   const automationPayload = automationRows.map((r, idx) => ({
@@ -92,16 +86,6 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows
     active: r.active !== false,
   }));
 
-  const bugPayload = bugRows.map((r, idx) => ({
-    area_id: areaId,
-    month: r.month,
-    month_order: idx,
-    opened: r.opened === '' ? null : r.opened,
-    resolved: r.resolved === '' ? null : r.resolved,
-    resolution_rate: window.KpiCalc.resolutionRate(r.opened, r.resolved),
-    active: r.active !== false,
-  }));
-
   const squadPayload = (squadRows || []).map((r) => ({
     id: r.id,
     area_id: areaId,
@@ -110,6 +94,9 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows
     end_date: r.endDate === '' || r.endDate === undefined ? null : r.endDate,
     points_planned: r.pointsPlanned === '' || r.pointsPlanned === undefined ? null : r.pointsPlanned,
     points_delivered: r.pointsDelivered === '' || r.pointsDelivered === undefined ? null : r.pointsDelivered,
+    bugs_opened: r.bugsOpened === '' || r.bugsOpened === undefined ? null : r.bugsOpened,
+    bugs_resolved: r.bugsResolved === '' || r.bugsResolved === undefined ? null : r.bugsResolved,
+    resolution_rate: window.KpiCalc.resolutionRate(r.bugsOpened, r.bugsResolved),
   }));
 
   const kpiPayload = Object.entries(kpiConfigs).map(([kpiKey, cfg]) => ({
@@ -154,7 +141,6 @@ async function saveAreaData(areaId, areaName, automationRows, bugRows, squadRows
 
   await Promise.all([
     syncTable('automation_metrics', automationPayload, automationRows.map((r) => r.month)),
-    syncTable('bug_metrics', bugPayload, bugRows.map((r) => r.month)),
     syncSquadTable(squadPayload, (squadRows || []).map((r) => r.id)),
     (async () => {
       if (!kpiPayload.length) return;

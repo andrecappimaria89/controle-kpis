@@ -34,7 +34,7 @@ create table if not exists automation_metrics (
   unique (area_id, month)
 );
 
--- 2b. SQUAD_METRICS (Tabela 3 - Volumetria Squad) ----------------------------
+-- 2b. SQUAD_METRICS (Tabela 3 - Volumetria Squad, agora inclui os campos de bugs) --
 create table if not exists squad_metrics (
   id               uuid primary key,         -- gerado no navegador (nao e auto-incremento)
   area_id          uuid not null references areas(id) on delete cascade,
@@ -43,23 +43,10 @@ create table if not exists squad_metrics (
   end_date         date,
   points_planned   numeric,
   points_delivered numeric,
+  bugs_opened      numeric,                  -- Bugs Abertos na sprint
+  bugs_resolved    numeric,                  -- Bugs Resolvidos na sprint
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
-);
-
--- 3. BUG_METRICS (Tabela 2 - Volumetria de abertura de bugs) -----------------
-create table if not exists bug_metrics (
-  id              uuid primary key default gen_random_uuid(),
-  area_id         uuid not null references areas(id) on delete cascade,
-  month           text not null,
-  month_order     integer not null default 0,
-  opened          numeric,                  -- Abertos
-  resolved        numeric,                  -- Resolvidos
-  resolution_rate numeric,                  -- Resolvidos / Abertos (calculado no front-end)
-  active     boolean not null default true, -- checkbox "Incluir" - se false, o mes fica de fora dos calculos
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now(),
-  unique (area_id, month)
 );
 
 -- 4. KPI_CONFIGS (titulo/descricao editaveis de cada card de KPI) -----------
@@ -88,10 +75,6 @@ drop trigger if exists trg_automation_updated_at on automation_metrics;
 create trigger trg_automation_updated_at before update on automation_metrics
   for each row execute function set_updated_at();
 
-drop trigger if exists trg_bugs_updated_at on bug_metrics;
-create trigger trg_bugs_updated_at before update on bug_metrics
-  for each row execute function set_updated_at();
-
 drop trigger if exists trg_kpi_configs_updated_at on kpi_configs;
 create trigger trg_kpi_configs_updated_at before update on kpi_configs
   for each row execute function set_updated_at();
@@ -110,17 +93,17 @@ cross join (
      'Percentual de testes automatizados realizados, com meta de crescimento contínuo de 1 ponto percentual ao mês.',
      'Mensal'),
     ('kpi3', 'Eficiência vs Planejamento Mensal',
-     'Compara a eficiência (Realizado/Planejado) do mês atual com o mês anterior, em pontos percentuais.',
-     'Mensal'),
+     'Eficiência do mês (Realizado ÷ Planejado), calculada com a diferença entre o mês atual e o anterior.',
+     'Geral'),
     ('kpi5', 'Taxa de Solução Mensal de Bugs',
-     'Percentual de bugs resolvidos comparado com os itens em aberto no último mês.',
+     'Percentual de bugs resolvidos comparado com os itens em aberto na sprint mais recente.',
      'Mensal'),
     ('kpi7', 'Taxa Automação Homologadas',
      'Percentual de cenários automatizados homologados (validados e funcionando) em relação ao total realizado no último mês.',
      'Mensal'),
-    ('kpi8', 'Bugs por Pontos Entregues',
-     'Relaciona os bugs abertos no mês de referência (mês da sprint mais recente) com os pontos entregues nas 2 últimas sprints concluídas.',
-     'Sprints')
+    ('kpi8', 'Taxa Geral de Resolução de Bugs',
+     'Soma de todos os bugs abertos e todos os bugs resolvidos cadastrados na Tabela 3, de forma geral.',
+     'Geral')
 ) as k(kpi_key, title, description, kpi_type)
 on conflict (area_id, kpi_key) do nothing;
 
@@ -131,7 +114,6 @@ on conflict (area_id, kpi_key) do nothing;
 -- auth.uid() antes de ir para producao.
 alter table areas enable row level security;
 alter table automation_metrics enable row level security;
-alter table bug_metrics enable row level security;
 alter table kpi_configs enable row level security;
 alter table squad_metrics enable row level security;
 
@@ -140,10 +122,6 @@ create policy "public read areas" on areas for select using (true);
 
 drop policy if exists "public all automation_metrics" on automation_metrics;
 create policy "public all automation_metrics" on automation_metrics
-  for all using (true) with check (true);
-
-drop policy if exists "public all bug_metrics" on bug_metrics;
-create policy "public all bug_metrics" on bug_metrics
   for all using (true) with check (true);
 
 drop policy if exists "public all kpi_configs" on kpi_configs;

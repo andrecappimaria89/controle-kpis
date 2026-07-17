@@ -54,8 +54,12 @@ function filledAutomationRows(rows, requirePlanned = false) {
   return rows.filter((r) => isRowActive(r) && isNum(r.realized) && (!requirePlanned || isNum(r.planned)));
 }
 
-function filledBugRows(rows) {
-  return rows.filter((r) => isRowActive(r) && (isNum(r.opened) || isNum(r.resolved)));
+/** Linhas da Tabela 3 (squad) que tem algum dado de bug preenchido, ordenadas por Data Fim */
+function filledSquadBugRows(squadRows) {
+  return (squadRows || [])
+    .filter((r) => r.endDate && (isNum(r.bugsOpened) || isNum(r.bugsResolved)))
+    .slice()
+    .sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
 }
 
 // ---------------------------------------------------------------------------
@@ -101,44 +105,31 @@ function velocity(squadRows, n = 2) {
   return sum / lastN.length;
 }
 
-const MONTH_CYCLE = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-
-/** Converte uma data (YYYY-MM-DD) na abreviacao de mes usada nas Tabelas 1/2 (ex: 'Jun') */
-function monthAbbrevFromDate(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  return MONTH_CYCLE[d.getMonth()];
+// ---------------------------------------------------------------------------
+// KPI 5 - Taxa de solucao mensal de bugs
+// Resolvidos / Abertos da sprint mais recente (por Data Fim) com dado de bug
+// preenchido na Tabela 3 (max 100%)
+// ---------------------------------------------------------------------------
+function kpi5MonthlyResolution(squadRows) {
+  const filled = filledSquadBugRows(squadRows);
+  if (filled.length === 0) return null;
+  const last = filled[filled.length - 1];
+  const rate = resolutionRate(last.bugsOpened, last.bugsResolved);
+  return Math.min(rate, 1);
 }
 
 // ---------------------------------------------------------------------------
-// KPI 8 - Bugs por Pontos Entregues
-// 1) Pega as 2 ultimas sprints concluidas (por data de fim)
-// 2) Soma os pontos entregues dessas sprints
-// 3) Mes de referencia = mes da data de fim da sprint mais recente
-// 4) Bugs Abertos do mes de referencia / Soma dos pontos entregues
+// KPI 8 - Taxa Geral de Resolucao de Bugs
+// Soma de TODOS os bugs abertos e TODOS os bugs resolvidos cadastrados na
+// Tabela 3 (todas as sprints) - visao geral, nao apenas das ultimas sprints.
 // ---------------------------------------------------------------------------
-function bugsPerDeliveredPoints(squadRows, bugRows, n = 2) {
-  const filledSquad = (squadRows || [])
-    .filter((r) => r.endDate && (isNum(r.pointsPlanned) || isNum(r.pointsDelivered)))
-    .slice()
-    .sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
-  if (!filledSquad.length) return null;
-
-  const lastN = filledSquad.slice(Math.max(0, filledSquad.length - n));
-  const totalPoints = lastN.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
-
-  const mostRecent = filledSquad[filledSquad.length - 1];
-  const refMonth = monthAbbrevFromDate(mostRecent.endDate);
-  if (!refMonth) return null;
-
-  const bugRow = (bugRows || []).find((r) => r.month === refMonth && isRowActive(r));
-  const bugsOpened = bugRow ? (toNum(bugRow.opened) || 0) : 0;
-
-  const perPoint = totalPoints ? bugsOpened / totalPoints : null;
-  const per100 = perPoint === null ? null : perPoint * 100;
-
-  return { refMonth, totalPoints, bugsOpened, perPoint, per100 };
+function bugsGeneralResolutionRate(squadRows) {
+  const filled = filledSquadBugRows(squadRows);
+  if (filled.length === 0) return null;
+  const totalOpened = filled.reduce((acc, r) => acc + (toNum(r.bugsOpened) || 0), 0);
+  const totalResolved = filled.reduce((acc, r) => acc + (toNum(r.bugsResolved) || 0), 0);
+  const rate = totalOpened ? Math.min(totalResolved / totalOpened, 1) : (totalResolved ? 1 : 0);
+  return { totalOpened, totalResolved, rate };
 }
 
 // ---------------------------------------------------------------------------
@@ -173,17 +164,57 @@ function kpi2QuarterlyGrowth(automationRows) {
   return Math.pow(last / first, 1 / (periods - 1)) - 1;
 }
 
+/**
+ * Totais "GERAIS": como Planejados/Realizados/Homologadas na Tabela 1 sao
+ * valores ACUMULADOS (o numero ja inclui tudo até aquele mes), o total
+ * verdadeiro e simplesmente o valor do MES MAIS RECENTE preenchido - nao a
+ * soma de todos os meses (que contaria tudo em duplicidade).
+ */
+function lastCumulativeTotals(automationRows) {
+  const filled = filledAutomationRows(automationRows);
+  if (!filled.length) return { planned: 0, realized: 0, homologated: 0 };
+  const last = filled[filled.length - 1];
+  return {
+    planned: toNum(last.planned) || 0,
+    realized: toNum(last.realized) || 0,
+    homologated: toNum(last.homologated) || 0,
+  };
+}
+
+/**
+ * Serie de DIFERENCAS mes a mes para um campo acumulado (planned/realized).
+ * Ex: Jun=6 (primeiro mes, delta=6), Jul=13 (delta=13-6=7).
+ * Meses inativos ou vazios retornam null (sem dado) e nao alteram a base de comparacao.
+ */
+function automationDeltaSeries(automationRows, field) {
+  let baseline = 0;
+  let baselineSet = false;
+  return (automationRows || []).map((r) => {
+    if (!isRowActive(r) || !isNum(r[field])) return null;
+    const current = toNum(r[field]);
+    const delta = baselineSet ? current - baseline : current;
+    baseline = current;
+    baselineSet = true;
+    return delta;
+  });
+}
+
 // ---------------------------------------------------------------------------
-// KPI 3 - Eficiencia vs planejamento (GERAL)
-// Sempre retorna o ultimo valor preenchido da coluna "%" da Tabela 1
-// (Realizado / Planejado do mes mais recente) - nao e mais uma comparacao/diferenca.
+// KPI 3 - Eficiencia vs planejamento mensal (GERAL)
+// Como Planejados/Realizados sao acumulados, a eficiencia do mes precisa ser
+// calculada com a DIFERENCA entre o mes atual e o anterior, nao com os
+// valores acumulados brutos.
+// Ex: Planejado 6->13 (delta 7), Realizado 5->6 (delta 1) => eficiencia = 1/7
 // ---------------------------------------------------------------------------
-function kpi3LastEfficiency(automationRows) {
+function kpi3DeltaEfficiency(automationRows) {
   const filled = filledAutomationRows(automationRows, true);
   if (filled.length === 0) return null;
   const last = filled[filled.length - 1];
-  if (!toNum(last.planned)) return null;
-  return automationPercentage(last.planned, last.realized);
+  const prev = filled.length >= 2 ? filled[filled.length - 2] : null;
+  const deltaPlanned = prev ? toNum(last.planned) - toNum(prev.planned) : toNum(last.planned);
+  const deltaRealized = prev ? toNum(last.realized) - toNum(prev.realized) : toNum(last.realized);
+  if (!deltaPlanned) return null; // sem variacao de planejado -> eficiencia indefinida
+  return deltaRealized / deltaPlanned;
 }
 
 /** Homologacao apenas do ultimo mes preenchido (usado no grafico de pizza "mensal") */
@@ -226,43 +257,6 @@ function kpi4Phrase(result) {
 }
 
 // ---------------------------------------------------------------------------
-// KPI 5 - Taxa de solucao mensal de bugs
-// Resolvidos do ultimo mes preenchido / Abertos do ultimo mes preenchido (max 100%)
-// ---------------------------------------------------------------------------
-function kpi5MonthlyResolution(bugRows) {
-  const filled = filledBugRows(bugRows);
-  if (filled.length === 0) return null;
-  const last = filled[filled.length - 1];
-  const rate = resolutionRate(last.opened, last.resolved);
-  return Math.min(rate, 1);
-}
-
-// ---------------------------------------------------------------------------
-// KPI 6 - Taxa de solucao trimestral de bugs + backlog
-// Soma Resolvidos (ultimos 3 meses preenchidos) / Soma Abertos (ultimos 3 meses)
-// ---------------------------------------------------------------------------
-function kpi6QuarterlyResolution(bugRows) {
-  const filled = filledBugRows(bugRows);
-  if (filled.length === 0) return null;
-  const lastThree = filled.slice(Math.max(0, filled.length - 3));
-  const sumOpened = lastThree.reduce((acc, r) => acc + (toNum(r.opened) || 0), 0);
-  const sumResolved = lastThree.reduce((acc, r) => acc + (toNum(r.resolved) || 0), 0);
-  const backlog = sumOpened - sumResolved;
-  let rate;
-  if (!sumOpened) {
-    rate = sumResolved ? 1 : 0;
-  } else {
-    rate = Math.min(sumResolved / sumOpened, 1);
-  }
-  return { rate, backlog };
-}
-
-function kpi6Text(kpi6Result, formatPercent) {
-  if (!kpi6Result) return 'Dados insuficientes';
-  const pct = formatPercent(kpi6Result.rate);
-  if (kpi6Result.backlog === 0) return `${pct} | Operação equilibrada`;
-  return `${pct} | Backlog: ${kpi6Result.backlog}`;
-}
 
 /** Seta de tendencia a partir de um resultado numerico (positivo/negativo/neutro) */
 function trend(value) {
@@ -281,22 +275,20 @@ window.KpiCalc = {
   resolutionRate,
   homologationRate,
   filledAutomationRows,
-  filledBugRows,
+  filledSquadBugRows,
   kpi1MonthlyDelta,
   kpi2QuarterlyGrowth,
-  kpi3LastEfficiency,
+  kpi3DeltaEfficiency,
   kpi4QuarterlyEfficiency,
   kpi4Phrase,
   kpi5MonthlyResolution,
-  kpi6QuarterlyResolution,
-  kpi6Text,
   kpi7MonthlyHomologationRate,
-  aggregateHomologation,
+  lastCumulativeTotals,
+  automationDeltaSeries,
   lastMonthHomologation,
   lastSprintsAggregate,
   velocity,
-  bugsPerDeliveredPoints,
-  monthAbbrevFromDate,
+  bugsGeneralResolutionRate,
   trend,
 };
 })();

@@ -13,12 +13,12 @@ const DEFAULT_KPI_CONFIG = {
   },
   kpi3: {
     title: 'Eficiência vs Planejamento Mensal',
-    description: 'Percentual de eficiência (Realizado/Planejado) referente ao mês mais recente cadastrado.',
+    description: 'Eficiência do mês (Realizado ÷ Planejado), calculada com a diferença entre o mês atual e o anterior.',
     type: 'Geral',
   },
   kpi5: {
     title: 'Taxa de Solução Mensal de Bugs',
-    description: 'Percentual de bugs resolvidos comparado com os itens em aberto no último mês.',
+    description: 'Percentual de bugs resolvidos comparado com os itens em aberto na sprint mais recente.',
     type: 'Mensal',
   },
   kpi7: {
@@ -27,9 +27,9 @@ const DEFAULT_KPI_CONFIG = {
     type: 'Mensal',
   },
   kpi8: {
-    title: 'Bugs por Pontos Entregues',
-    description: 'Relaciona os bugs abertos no mês de referência (mês da sprint mais recente) com os pontos entregues nas 2 últimas sprints concluídas.',
-    type: 'Sprints',
+    title: 'Taxa Geral de Resolução de Bugs',
+    description: 'Soma de todos os bugs abertos e todos os bugs resolvidos cadastrados na Tabela 3, de forma geral.',
+    type: 'Geral',
   },
 };
 
@@ -50,28 +50,30 @@ function makeId() {
   return `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-// Dados de exemplo para a Tabela 3 - Volumetria Squad
-function defaultSquadRows() {
-  return [
-    { id: makeId(), startDate: '2026-06-01', endDate: '2026-06-14', sprint: 'Sprint 23', pointsPlanned: 40, pointsDelivered: 34 },
-    { id: makeId(), startDate: '2026-06-15', endDate: '2026-06-28', sprint: 'Sprint 24', pointsPlanned: 45, pointsDelivered: 42 },
-  ];
-}
-
-const DEFAULT_BUGS_BY_AREA = {
-  DIRECT: [ [1, 3], [0, 0], [2, 2], [9, 8] ],
-  CBB:    [ [20, 28], [10, 15], [11, 8], [4, 8] ],
-  PVP:    [ [0, 0], [3, 2], [6, 6], [13, 10] ],
-  CS:     [ [0, 0], [3, 3], [6, 5], [6, 6] ],
-  RFs:    [ [0, 0], [1, 1], [1, 1], [0, 0] ],
+// Ex-Tabela 2 (bugs), agora incorporada como colunas da Tabela 3 (Volumetria Squad)
+const DEFAULT_SQUAD_BUGS_BY_AREA = {
+  DIRECT: [ [2, 2], [9, 8] ],
+  CBB:    [ [11, 8], [4, 8] ],
+  PVP:    [ [6, 6], [13, 10] ],
+  CS:     [ [6, 5], [6, 6] ],
+  RFs:    [ [1, 1], [0, 0] ],
 };
 
-function defaultBugRows(areaName) {
-  const months = ['Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set'];
-  const filled = DEFAULT_BUGS_BY_AREA[areaName] || [];
-  return months.map((month, idx) => {
-    const pair = filled[idx];
-    return { month, opened: pair ? pair[0] : '', resolved: pair ? pair[1] : '', active: true };
+// Dados de exemplo para a Tabela 3 - Volumetria Squad (pontos + bugs da sprint)
+function defaultSquadRows(areaName) {
+  const bugsPairs = DEFAULT_SQUAD_BUGS_BY_AREA[areaName] || [];
+  const sprints = [
+    { startDate: '2026-06-01', endDate: '2026-06-14', sprint: 'Sprint 23', pointsPlanned: 40, pointsDelivered: 34 },
+    { startDate: '2026-06-15', endDate: '2026-06-28', sprint: 'Sprint 24', pointsPlanned: 45, pointsDelivered: 42 },
+  ];
+  return sprints.map((s, idx) => {
+    const pair = bugsPairs[idx];
+    return {
+      id: makeId(),
+      ...s,
+      bugsOpened: pair ? pair[0] : '',
+      bugsResolved: pair ? pair[1] : '',
+    };
   });
 }
 
@@ -80,8 +82,7 @@ function buildDefaultState() {
   AREA_NAMES.forEach((name) => {
     data[name] = {
       automation: defaultAutomationRows(),
-      bugs: defaultBugRows(name),
-      squad: defaultSquadRows(),
+      squad: defaultSquadRows(name),
       cycleTimeDays: 2,
       cycleTimeHours: 3,
       kpis: JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG)),
@@ -180,7 +181,7 @@ async function loadInitialData() {
 }
 
 function hydrateStateFromSupabase(remote) {
-  const { areas, automation, bugs, squad, kpiConfigs } = remote;
+  const { areas, automation, squad, kpiConfigs } = remote;
   areaIdByName = {};
   const cycleTimeByName = {};
   areas.forEach((a) => {
@@ -202,9 +203,6 @@ function hydrateStateFromSupabase(remote) {
         toAnalyze: r.to_analyze ?? '',
         active: r.active !== false,
       }));
-    const bugRows = bugs
-      .filter((r) => r.area_id === areaId)
-      .map((r) => ({ month: r.month, opened: r.opened ?? '', resolved: r.resolved ?? '', active: r.active !== false }));
     const squadRows = (squad || [])
       .filter((r) => r.area_id === areaId)
       .map((r) => ({
@@ -214,6 +212,8 @@ function hydrateStateFromSupabase(remote) {
         sprint: r.sprint ?? '',
         pointsPlanned: r.points_planned ?? '',
         pointsDelivered: r.points_delivered ?? '',
+        bugsOpened: r.bugs_opened ?? '',
+        bugsResolved: r.bugs_resolved ?? '',
       }));
 
     const kpis = JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG));
@@ -226,8 +226,7 @@ function hydrateStateFromSupabase(remote) {
 
     data[name] = {
       automation: autoRows.length ? autoRows : defaultAutomationRows(),
-      bugs: bugRows.length ? bugRows : defaultBugRows(name),
-      squad: squadRows.length ? squadRows : defaultSquadRows(),
+      squad: squadRows.length ? squadRows : defaultSquadRows(name),
       cycleTimeDays: cycleTimeByName[name] ? cycleTimeByName[name].days : '',
       cycleTimeHours: cycleTimeByName[name] ? cycleTimeByName[name].hours : '',
       kpis,
@@ -291,7 +290,7 @@ async function persistState(opts = {}) {
       for (const name of AREA_NAMES) {
         const areaId = areaIdByName[name];
         const areaData = state.data[name];
-        await window.DataStore.saveAreaData(areaId, name, areaData.automation, areaData.bugs, areaData.squad, { days: areaData.cycleTimeDays, hours: areaData.cycleTimeHours }, areaData.kpis);
+        await window.DataStore.saveAreaData(areaId, name, areaData.automation, areaData.squad, { days: areaData.cycleTimeDays, hours: areaData.cycleTimeHours }, areaData.kpis);
       }
 
       updateConnectionStatus('ok', 'Conectado ao Supabase');
@@ -340,24 +339,23 @@ function metricCard({ icon, iconCls, label, value, caption }) {
 
 function renderAutomationMetrics() {
   const { automation } = currentAreaData();
-  const totalPlanned = automation.reduce((a, r) => a + (toNum(r.planned) || 0), 0);
-  const totalRealized = automation.reduce((a, r) => a + (toNum(r.realized) || 0), 0);
-  const overallPct = totalPlanned ? totalRealized / totalPlanned : 0;
-  const homolog = window.KpiCalc.aggregateHomologation(automation);
+  const totals = window.KpiCalc.lastCumulativeTotals(automation);
+  const overallPct = totals.planned ? totals.realized / totals.planned : 0;
 
   const cards = [
-    metricCard({ icon: '📋', iconCls: 'blue', label: 'Total Planejado', value: formatInt(totalPlanned), caption: 'Automações planejadas' }),
-    metricCard({ icon: '✅', iconCls: 'green', label: 'Total Realizado', value: formatInt(totalRealized), caption: 'Automações realizadas' }),
-    metricCard({ icon: '🛡️', iconCls: 'green', label: 'Automações Homologadas', value: formatInt(homolog.totalHomologated), caption: 'Automações homologadas' }),
+    metricCard({ icon: '📋', iconCls: 'blue', label: 'Total Planejado', value: formatInt(totals.planned), caption: 'Automações planejadas' }),
+    metricCard({ icon: '✅', iconCls: 'green', label: 'Total Realizado', value: formatInt(totals.realized), caption: 'Automações realizadas' }),
+    metricCard({ icon: '🛡️', iconCls: 'green', label: 'Automações Homologadas', value: formatInt(totals.homologated), caption: 'Automações homologadas' }),
     metricCard({ icon: '%', iconCls: 'blue', label: '% Geral Automatizado', value: formatPercent(overallPct), caption: 'Percentual do planejado' }),
   ];
   document.getElementById('automationMetrics').innerHTML = cards.join('');
 }
 
 function renderBugsMetrics() {
-  const { bugs } = currentAreaData();
-  const totalOpened = bugs.reduce((a, r) => a + (toNum(r.opened) || 0), 0);
-  const totalResolved = bugs.reduce((a, r) => a + (toNum(r.resolved) || 0), 0);
+  const { squad } = currentAreaData();
+  const filled = window.KpiCalc.filledSquadBugRows(squad);
+  const totalOpened = filled.reduce((a, r) => a + (toNum(r.bugsOpened) || 0), 0);
+  const totalResolved = filled.reduce((a, r) => a + (toNum(r.bugsResolved) || 0), 0);
   const backlog = totalOpened - totalResolved;
 
   const cards = [
@@ -460,7 +458,7 @@ const centerTextPlugin = {
 };
 
 function renderCharts() {
-  const { automation, bugs, squad } = currentAreaData();
+  const { automation, squad } = currentAreaData();
 
   const autoWrap = document.getElementById('automationChart').parentElement;
   const bugsWrap = document.getElementById('bugsChart').parentElement;
@@ -537,8 +535,8 @@ function renderCharts() {
     data: {
       labels: automation.map((r) => r.month),
       datasets: [
-        { label: 'Planejados', data: automation.map((r) => toNum(r.planned) ?? 0), backgroundColor: '#2563eb', borderRadius: 6 },
-        { label: 'Realizados', data: automation.map((r) => toNum(r.realized) ?? 0), backgroundColor: '#16a34a', borderRadius: 6 },
+        { label: 'Planejados', data: window.KpiCalc.automationDeltaSeries(automation, 'planned').map((v) => v ?? 0), backgroundColor: '#2563eb', borderRadius: 6 },
+        { label: 'Realizados', data: window.KpiCalc.automationDeltaSeries(automation, 'realized').map((v) => v ?? 0), backgroundColor: '#16a34a', borderRadius: 6 },
       ],
     },
     options: commonOptions,
@@ -547,10 +545,10 @@ function renderCharts() {
   charts.bugs = new Chart(bugsCtx, {
     type: 'bar',
     data: {
-      labels: bugs.map((r) => r.month),
+      labels: (squad || []).map((r) => r.sprint || '—'),
       datasets: [
-        { label: 'Abertos', data: bugs.map((r) => toNum(r.opened) ?? 0), backgroundColor: '#f97316', borderRadius: 6 },
-        { label: 'Resolvidos', data: bugs.map((r) => toNum(r.resolved) ?? 0), backgroundColor: '#16a34a', borderRadius: 6 },
+        { label: 'Abertos', data: (squad || []).map((r) => toNum(r.bugsOpened) ?? 0), backgroundColor: '#f97316', borderRadius: 6 },
+        { label: 'Resolvidos', data: (squad || []).map((r) => toNum(r.bugsResolved) ?? 0), backgroundColor: '#16a34a', borderRadius: 6 },
       ],
     },
     options: commonOptions,
@@ -651,14 +649,14 @@ function rateColorClass(rate) {
 }
 
 function renderKpis() {
-  const { automation, bugs, squad } = currentAreaData();
+  const { automation, squad } = currentAreaData();
   const C = window.KpiCalc;
 
   const kpi1 = C.kpi1MonthlyDelta(automation);
-  const kpi3 = C.kpi3LastEfficiency(automation);
-  const kpi5 = C.kpi5MonthlyResolution(bugs);
+  const kpi3 = C.kpi3DeltaEfficiency(automation);
+  const kpi5 = C.kpi5MonthlyResolution(squad);
   const kpi7 = C.kpi7MonthlyHomologationRate(automation);
-  const kpi8 = C.bugsPerDeliveredPoints(squad, bugs, 2);
+  const kpi8 = C.bugsGeneralResolutionRate(squad);
 
   const automationBlocks = [];
   const bugBlocks = [];
@@ -678,10 +676,11 @@ function renderKpis() {
     `));
   }
 
-  // KPI 3 (Geral) — sempre o ultimo valor preenchido da coluna "%" da Tabela 1
+  // KPI 3 (Geral) — eficiencia calculada com a DIFERENCA entre o mes atual e o anterior
   {
+    const cls = kpi3 === null ? '' : kpi3 >= 0 ? 'positive' : 'negative';
     automationBlocks.push(kpiListItem('kpi3', `
-      <div class="kpi-list-value">${formatPercent(kpi3)}</div>
+      <div class="kpi-list-value ${cls}">${formatPercent(kpi3)}</div>
     `));
   }
 
@@ -701,16 +700,15 @@ function renderKpis() {
     `));
   }
 
-  // KPI 8 — Bugs por Pontos Entregues (bugs abertos no mes de referencia / pontos das 2 ultimas sprints)
+  // KPI 8 — Taxa Geral de Resolucao de Bugs (soma de TODOS os bugs abertos/resolvidos na Tabela 3)
   {
     if (!kpi8) {
-      bugBlocks.push(kpiListItem('kpi8', '<div class="kpi-list-value">—</div><div class="kpi-phrase">Dados insuficientes (cadastre sprints com data de fim na Tabela 3)</div>'));
+      bugBlocks.push(kpiListItem('kpi8', '<div class="kpi-list-value">—</div><div class="kpi-phrase">Dados insuficientes (cadastre Bugs Abertos/Resolvidos na Tabela 3)</div>'));
     } else {
-      const per100Cls = kpi8.per100 === null ? '' : kpi8.per100 <= 10 ? 'rate-green' : kpi8.per100 <= 20 ? 'rate-orange' : 'rate-red';
-      const pctText = kpi8.perPoint === null ? '—' : formatPercent(kpi8.perPoint, { decimals: 1 });
+      const cls = rateColorClass(kpi8.rate);
       bugBlocks.push(kpiListItem('kpi8', `
-        <div class="kpi-list-value ${per100Cls}">${pctText} <span class="kpi-list-value-unit">/ ${formatInt(kpi8.totalPoints)} pts</span></div>
-        <div class="kpi-phrase">Pontos entregues (2 últimas sprints): ${formatInt(kpi8.totalPoints)} · Bugs abertos (${kpi8.refMonth}): ${formatInt(kpi8.bugsOpened)}</div>
+        <div class="kpi-list-value ${cls}">${formatPercent(kpi8.rate)}</div>
+        <div class="kpi-phrase">Bugs abertos: ${formatInt(kpi8.totalOpened)} · Bugs resolvidos: ${formatInt(kpi8.totalResolved)}</div>
       `));
     }
   }
@@ -751,7 +749,7 @@ function renderAutomationTable() {
         <td><input type="number" min="0" class="cell-input flow" data-table="automation" data-idx="${idx}" data-field="flow" value="${r.flow ?? ''}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input planned" data-table="automation" data-idx="${idx}" data-field="planned" value="${r.planned}" placeholder="—" /></td>
         <td><input type="number" min="0" class="cell-input realized" data-table="automation" data-idx="${idx}" data-field="realized" value="${r.realized}" placeholder="—" /></td>
-        <td><input type="number" min="0" class="cell-input homologated" data-table="automation" data-idx="${idx}" data-field="homologated" value="${r.homologated ?? ''}" placeholder="—" title="Não pode ser maior que Realizados" /></td>
+        <td><input type="number" min="0" class="cell-input homologated" data-table="automation" data-idx="${idx}" data-field="homologated" value="${r.homologated ?? ''}" placeholder="—" title="Pode ser maior que Realizados (ex: homologação de itens de meses anteriores)" /></td>
         <td><input type="number" min="0" class="cell-input to-analyze" data-table="automation" data-idx="${idx}" data-field="toAnalyze" value="${r.toAnalyze ?? ''}" placeholder="—" /></td>
         <td class="pct-readonly">${formatPercent(pct)}</td>
         <td><button class="row-delete" data-remove="automation" data-idx="${idx}" title="Remover mês">✕</button></td>
@@ -761,39 +759,25 @@ function renderAutomationTable() {
   populateMonthPicker('automationMonthPicker', rows);
 }
 
-function renderBugsTable() {
-  const rows = currentAreaData().bugs;
-  const tbody = document.querySelector('#bugsTable tbody');
-  tbody.innerHTML = rows.map((r, idx) => {
-    const rate = window.KpiCalc.resolutionRate(r.opened, r.resolved);
-    const active = r.active !== false;
-    return `
-      <tr data-idx="${idx}" class="${active ? '' : 'row-inactive'}">
-        <td><input type="checkbox" class="row-include-checkbox" data-table="bugs" data-idx="${idx}" data-field="active" ${active ? 'checked' : ''} title="Incluir este mês nos cálculos" /></td>
-        <td class="month-label">${r.month}</td>
-        <td><input type="number" min="0" class="cell-input opened" data-table="bugs" data-idx="${idx}" data-field="opened" value="${r.opened}" placeholder="—" /></td>
-        <td><input type="number" min="0" class="cell-input resolved" data-table="bugs" data-idx="${idx}" data-field="resolved" value="${r.resolved}" placeholder="—" /></td>
-        <td class="pct-readonly">${formatPercent(rate)}</td>
-        <td><button class="row-delete" data-remove="bugs" data-idx="${idx}" title="Remover mês">✕</button></td>
-      </tr>
-    `;
-  }).join('');
-  populateMonthPicker('bugsMonthPicker', rows);
-}
-
 function renderSquadTable() {
   const rows = currentAreaData().squad || [];
   const tbody = document.querySelector('#squadTable tbody');
-  tbody.innerHTML = rows.map((r, idx) => `
+  tbody.innerHTML = rows.map((r, idx) => {
+    const rate = window.KpiCalc.resolutionRate(r.bugsOpened, r.bugsResolved);
+    return `
     <tr data-idx="${idx}">
       <td><input type="date" class="cell-input date" data-table="squad" data-idx="${idx}" data-field="startDate" value="${r.startDate || ''}" /></td>
       <td><input type="date" class="cell-input date" data-table="squad" data-idx="${idx}" data-field="endDate" value="${r.endDate || ''}" /></td>
       <td><input type="text" maxlength="40" class="cell-input sprint" data-table="squad" data-idx="${idx}" data-field="sprint" value="${escapeHtml(r.sprint || '')}" placeholder="Sprint" /></td>
       <td><input type="number" min="0" class="cell-input planned" data-table="squad" data-idx="${idx}" data-field="pointsPlanned" value="${r.pointsPlanned}" placeholder="—" /></td>
       <td><input type="number" min="0" class="cell-input resolved" data-table="squad" data-idx="${idx}" data-field="pointsDelivered" value="${r.pointsDelivered}" placeholder="—" /></td>
+      <td><input type="number" min="0" class="cell-input opened" data-table="squad" data-idx="${idx}" data-field="bugsOpened" value="${r.bugsOpened ?? ''}" placeholder="—" /></td>
+      <td><input type="number" min="0" class="cell-input resolved" data-table="squad" data-idx="${idx}" data-field="bugsResolved" value="${r.bugsResolved ?? ''}" placeholder="—" /></td>
+      <td class="pct-readonly">${formatPercent(rate)}</td>
       <td><button class="row-delete" data-remove="squad" data-idx="${idx}" title="Remover sprint">✕</button></td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 const NON_NUMERIC_FIELDS = ['sprint', 'startDate', 'endDate'];
@@ -813,16 +797,6 @@ function bindTableEvents() {
         e.target.classList.remove('invalid');
       }
 
-      if (table === 'automation' && field === 'homologated' && value !== '') {
-        const realized = window.KpiCalc.toNum(currentAreaData().automation[idx].realized) || 0;
-        if (Number(value) > realized) {
-          e.target.classList.add('invalid');
-          showToast('Automações Homologadas não pode ser maior que Realizados.', 'error');
-          value = String(realized);
-          e.target.value = value;
-        }
-      }
-
       currentAreaData()[table][idx][field] = value;
       scheduleAutosave();
       renderAutomationMetrics();
@@ -836,9 +810,11 @@ function bindTableEvents() {
       const pctCell = row.querySelector('.pct-readonly');
       if (pctCell) {
         const data = currentAreaData()[table][idx];
-        pctCell.textContent = table === 'automation'
-          ? formatPercent(window.KpiCalc.automationPercentage(data.planned, data.realized))
-          : formatPercent(window.KpiCalc.resolutionRate(data.opened, data.resolved));
+        if (table === 'automation') {
+          pctCell.textContent = formatPercent(window.KpiCalc.automationPercentage(data.planned, data.realized));
+        } else if (table === 'squad') {
+          pctCell.textContent = formatPercent(window.KpiCalc.resolutionRate(data.bugsOpened, data.bugsResolved));
+        }
       }
     });
   });
@@ -888,28 +864,24 @@ function availableMonths(rows) {
   return MONTH_CYCLE.filter((m) => !used.has(m));
 }
 
-function addMonth(table, chosenMonth) {
+function addMonth(chosenMonth) {
   const areaData = currentAreaData();
-  const month = chosenMonth || availableMonths(areaData[table])[0];
+  const month = chosenMonth || availableMonths(areaData.automation)[0];
   if (!month) return; // todos os 12 meses ja foram cadastrados nessa tabela
-  if (table === 'automation') {
-    areaData.automation.push({ month, flow: '', planned: '', realized: '', homologated: '', toAnalyze: '', active: true });
-  } else {
-    areaData.bugs.push({ month, opened: '', resolved: '', active: true });
-  }
+  areaData.automation.push({ month, flow: '', planned: '', realized: '', homologated: '', toAnalyze: '', active: true });
   scheduleAutosave();
   renderAll();
 }
 
 function addSquadRow() {
-  currentAreaData().squad.push({ id: makeId(), startDate: '', endDate: '', sprint: '', pointsPlanned: '', pointsDelivered: '' });
+  currentAreaData().squad.push({ id: makeId(), startDate: '', endDate: '', sprint: '', pointsPlanned: '', pointsDelivered: '', bugsOpened: '', bugsResolved: '' });
   scheduleAutosave();
   renderAll();
 }
 
 // -------------------------------- CSV EXPORT ----------------------------------
 function exportCsv() {
-  const { automation, bugs, squad } = currentAreaData();
+  const { automation, squad } = currentAreaData();
   const lines = [];
   lines.push(`Área;${state.currentArea}`);
   lines.push('');
@@ -921,17 +893,11 @@ function exportCsv() {
     lines.push(`${r.month};${r.flow ?? ''};${r.planned};${r.realized};${r.homologated ?? ''};${r.toAnalyze ?? ''};${formatPercent(pct)};${formatPercent(homologRate)}`);
   });
   lines.push('');
-  lines.push('Volumetria de Abertura de Bugs');
-  lines.push('Mês;Abertos;Resolvidos;Índice de Resolução');
-  bugs.forEach((r) => {
-    const rate = window.KpiCalc.resolutionRate(r.opened, r.resolved);
-    lines.push(`${r.month};${r.opened};${r.resolved};${formatPercent(rate)}`);
-  });
-  lines.push('');
   lines.push('Volumetria Squad');
-  lines.push('Data Início;Data Fim;Sprint;Pontos Planejados;Pontos Entregues');
+  lines.push('Data Início;Data Fim;Sprint;Pontos Planejados;Pontos Entregues;Bugs Abertos;Bugs Resolvidos;Índice de Resolução');
   (squad || []).forEach((r) => {
-    lines.push(`${r.startDate ?? ''};${r.endDate ?? ''};${r.sprint ?? ''};${r.pointsPlanned ?? ''};${r.pointsDelivered ?? ''}`);
+    const rate = window.KpiCalc.resolutionRate(r.bugsOpened, r.bugsResolved);
+    lines.push(`${r.startDate ?? ''};${r.endDate ?? ''};${r.sprint ?? ''};${r.pointsPlanned ?? ''};${r.pointsDelivered ?? ''};${r.bugsOpened ?? ''};${r.bugsResolved ?? ''};${formatPercent(rate)}`);
   });
 
   const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -1016,15 +982,13 @@ async function init() {
   document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
   document.querySelectorAll('[data-add]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const table = btn.dataset.add;
-      if (table === 'squad') {
+      if (btn.dataset.add === 'squad') {
         addSquadRow();
         return;
       }
-      const pickerId = table === 'automation' ? 'automationMonthPicker' : 'bugsMonthPicker';
-      const picker = document.getElementById(pickerId);
+      const picker = document.getElementById('automationMonthPicker');
       const chosenMonth = picker && picker.value ? picker.value : null;
-      addMonth(table, chosenMonth);
+      addMonth(chosenMonth);
     });
   });
   bindPageToggle();
