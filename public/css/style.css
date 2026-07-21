@@ -97,7 +97,7 @@ button {
 .connection-status.error { color: #fca5a5; }
 .connection-status.local { color: #fcd34d; }
 
-.header-actions { display: flex; align-items: center; gap: 14px; }
+.header-actions { display: flex; align-items: flex-start; gap: 14px; }
 
 .page-toggle {
   display: flex;

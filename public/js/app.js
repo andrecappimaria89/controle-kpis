@@ -89,7 +89,7 @@ function buildDefaultState() {
       kpis: JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG)),
     };
   });
-  return { currentArea: 'DIRECT', page: 'dashboard', data };
+  return { currentArea: AREA_NAMES[0], page: 'dashboard', data };
 }
 
 // ------------------------------- ESTADO GLOBAL ------------------------------
@@ -151,6 +151,11 @@ function showToast(message, type = 'success') {
 }
 
 function currentAreaData() {
+  if (!state.data[state.currentArea]) {
+    // rede de seguranca: currentArea aponta para uma area que nao existe mais
+    // (ex: cache antigo de antes de uma renomeacao) - cai para a primeira area valida
+    state.currentArea = AREA_NAMES.find((name) => state.data[name]) || AREA_NAMES[0];
+  }
   return state.data[state.currentArea];
 }
 
@@ -162,6 +167,25 @@ function updateConnectionStatus(kind, text) {
 }
 
 // -------------------------------- PERSISTENCIA --------------------------------
+/** Garante que toda area atual (AREA_NAMES) tenha uma entrada em state.data,
+ *  mesmo que o cache local seja de antes de uma renomeacao de areas. */
+function repairAreaData() {
+  AREA_NAMES.forEach((name) => {
+    if (!state.data[name]) {
+      state.data[name] = {
+        automation: defaultAutomationRows(),
+        squad: defaultSquadRows(name),
+        cycleTimeDays: '',
+        cycleTimeHours: '',
+        kpis: JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG)),
+      };
+    }
+  });
+  if (!AREA_NAMES.includes(state.currentArea)) {
+    state.currentArea = AREA_NAMES[0];
+  }
+}
+
 async function loadInitialData() {
   // Rede de seguranca: se a ultima sessao deixou alteracoes locais que ainda
   // nao foram confirmadas no Supabase (ex: aba fechada antes do autosave
@@ -170,6 +194,7 @@ async function loadInitialData() {
   const localBeforeFetch = window.DataStore.localLoad();
   if (localBeforeFetch && localBeforeFetch.__dirty && window.DataStore.IS_SUPABASE_CONFIGURED) {
     state = localBeforeFetch;
+    repairAreaData();
     updateConnectionStatus('local', 'Sincronizando alterações pendentes…');
     const synced = await persistState({ silent: true });
     if (!synced) {
@@ -183,6 +208,7 @@ async function loadInitialData() {
       const remote = await window.DataStore.fetchAllData();
       if (remote) {
         hydrateStateFromSupabase(remote);
+        repairAreaData();
         updateConnectionStatus('ok', 'Conectado ao Supabase');
         return;
       }
@@ -197,6 +223,7 @@ async function loadInitialData() {
 
   const local = localBeforeFetch || window.DataStore.localLoad();
   if (local) state = local;
+  repairAreaData();
 }
 
 function hydrateStateFromSupabase(remote) {
@@ -253,7 +280,8 @@ function hydrateStateFromSupabase(remote) {
     };
   });
 
-  state = { currentArea: state.currentArea || 'DIRECT', page: state.page || 'dashboard', data };
+  const safeCurrentArea = AREA_NAMES.includes(state.currentArea) ? state.currentArea : AREA_NAMES[0];
+  state = { currentArea: safeCurrentArea, page: state.page || 'dashboard', data };
 }
 
 let autosaveTimer = null;
