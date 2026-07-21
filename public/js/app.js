@@ -2,7 +2,7 @@
 // app.js - estado da aplicacao, renderizacao e interacoes.
 // ============================================================================
 
-const AREA_NAMES = ['Financing', 'Channels', 'After Sales', 'Consortium& Insurance', 'Small Projects', 'Autbank Packages Control'];
+const AREA_NAMES = ['Financing', 'Channels', 'After Sales', 'Consortium & Insurance', 'Small Projects', 'Autbank Packages Control'];
 const MONTH_CYCLE = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 const DEFAULT_KPI_CONFIG = {
@@ -368,8 +368,8 @@ function renderAutomationMetrics() {
   const overallPct = totals.planned ? totals.realized / totals.planned : 0;
 
   const cards = [
-    metricCard({ icon: '📋', iconCls: 'blue', label: 'Total Planejado', value: formatInt(totals.planned), caption: 'Automações planejadas' }),
-    metricCard({ icon: '✅', iconCls: 'green', label: 'Total Realizado', value: formatInt(totals.realized), caption: 'Automações realizadas' }),
+    metricCard({ icon: '📋', iconCls: 'blue', label: 'Total Automações planejadas', value: formatInt(totals.planned), caption: 'Automações planejadas' }),
+    metricCard({ icon: '✅', iconCls: 'green', label: 'Total Automações Realizadas', value: formatInt(totals.realized), caption: 'Automações realizadas' }),
     metricCard({ icon: '%', iconCls: 'blue', label: '% Geral automatizado realizado', value: formatPercent(overallPct), caption: 'Percentual do planejado' }),
     metricCard({ icon: '🛡️', iconCls: 'green', label: 'Saúde da Automação', value: formatInt(totals.homologated), caption: 'Automações homologadas', cardCls: 'tint-green' }),
   ];
@@ -1059,6 +1059,158 @@ function renderAll() {
   bindTableEvents();
 }
 
+// ============================================================================
+// RESUMO EXECUTIVO
+// ============================================================================
+
+function summaryItemHtml(item, kind) {
+  const icon = kind === 'positive' ? '✅' : '⚠️';
+  return `
+    <div class="summary-item">
+      <span class="summary-item-icon">${icon}</span>
+      <span class="summary-item-text">${escapeHtml(item.text)}</span>
+    </div>
+  `;
+}
+
+function actionItemHtml(text) {
+  return `
+    <div class="summary-item">
+      <span class="summary-item-icon">➡️</span>
+      <span class="summary-item-text">${escapeHtml(text)}</span>
+    </div>
+  `;
+}
+
+function renderExecutiveSummaryContent(summary) {
+  const body = document.getElementById('execSummaryBody');
+  const meta = document.getElementById('execSummaryMeta');
+
+  if (summary.insufficientData) {
+    meta.textContent = '';
+    body.innerHTML = '<p class="summary-empty">Não há dados suficientes para gerar o Resumo Executivo.</p>';
+    return;
+  }
+
+  const now = new Date();
+  const updatedAt = now.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  meta.textContent = `${summary.periodLabel} · Gerado em ${updatedAt}`;
+
+  const noPrevHtml = summary.noPreviousPeriod
+    ? '<p class="summary-empty">Sem período anterior para comparação.</p>'
+    : '';
+
+  const positivesHtml = summary.positives.length
+    ? summary.positives.map((i) => summaryItemHtml(i, 'positive')).join('')
+    : '<div class="summary-empty">Nenhum destaque positivo relevante neste período.</div>';
+
+  const attentionsHtml = summary.attentions.length
+    ? summary.attentions.map((i) => summaryItemHtml(i, 'negative')).join('')
+    : '<div class="summary-empty">Nenhum ponto de atenção relevante neste período.</div>';
+
+  const actionsHtml = summary.actions.length
+    ? summary.actions.map((a) => actionItemHtml(a)).join('')
+    : '<div class="summary-empty">Nenhuma ação necessária no momento.</div>';
+
+  body.innerHTML = `
+    <div class="summary-overall">${escapeHtml(summary.overallSentence)}</div>
+    ${noPrevHtml}
+    <div class="summary-section">
+      <div class="summary-section-title">Destaques Positivos</div>
+      ${positivesHtml}
+    </div>
+    <div class="summary-section">
+      <div class="summary-section-title">Pontos de Atenção</div>
+      ${attentionsHtml}
+    </div>
+    <div class="summary-section">
+      <div class="summary-section-title">Ações Recomendadas</div>
+      ${actionsHtml}
+    </div>
+  `;
+}
+
+function executiveSummaryToPlainText(summary) {
+  if (summary.insufficientData) return 'Não há dados suficientes para gerar o Resumo Executivo.';
+  const lines = [];
+  lines.push('RESUMO EXECUTIVO');
+  lines.push(summary.periodLabel);
+  lines.push('');
+  lines.push(summary.overallSentence);
+  if (summary.noPreviousPeriod) lines.push('(Sem período anterior para comparação.)');
+  lines.push('');
+  lines.push('DESTAQUES POSITIVOS');
+  (summary.positives.length ? summary.positives.map((i) => `- ${i.text}`) : ['- Nenhum destaque positivo relevante.']).forEach((l) => lines.push(l));
+  lines.push('');
+  lines.push('PONTOS DE ATENÇÃO');
+  (summary.attentions.length ? summary.attentions.map((i) => `- ${i.text}`) : ['- Nenhum ponto de atenção relevante.']).forEach((l) => lines.push(l));
+  lines.push('');
+  lines.push('AÇÕES RECOMENDADAS');
+  (summary.actions.length ? summary.actions.map((a) => `- ${a}`) : ['- Nenhuma ação necessária.']).forEach((l) => lines.push(l));
+  return lines.join('\n');
+}
+
+let lastExecutiveSummary = null;
+
+function openExecutiveSummary() {
+  const { automation, squad } = currentAreaData();
+  lastExecutiveSummary = window.KpiCalc.buildExecutiveSummary(automation, squad);
+  renderExecutiveSummaryContent(lastExecutiveSummary);
+
+  const overlay = document.getElementById('execSummaryOverlay');
+  overlay.style.display = 'flex';
+  overlay.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeExecutiveSummary() {
+  const overlay = document.getElementById('execSummaryOverlay');
+  overlay.style.display = 'none';
+  overlay.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
+
+function bindExecutiveSummary() {
+  const btn = document.getElementById('execSummaryBtn');
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    btn.classList.add('loading');
+    // pequeno atraso proposital so para dar feedback visual de carregamento
+    setTimeout(() => {
+      openExecutiveSummary();
+      btn.disabled = false;
+      btn.classList.remove('loading');
+    }, 250);
+  });
+
+  document.getElementById('execSummaryCloseX').addEventListener('click', closeExecutiveSummary);
+  document.getElementById('execSummaryClose').addEventListener('click', closeExecutiveSummary);
+  document.getElementById('execSummaryOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'execSummaryOverlay') closeExecutiveSummary();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('execSummaryOverlay').style.display === 'flex') {
+      closeExecutiveSummary();
+    }
+  });
+
+  document.getElementById('execSummaryCopy').addEventListener('click', async () => {
+    if (!lastExecutiveSummary) return;
+    const text = executiveSummaryToPlainText(lastExecutiveSummary);
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Resumo copiado para a área de transferência!', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Não foi possível copiar automaticamente. Selecione o texto manualmente.', 'error');
+    }
+  });
+
+  document.getElementById('execSummaryPrint').addEventListener('click', () => {
+    window.print();
+  });
+}
+
 // ------------------------------------ INIT ---------------------------------------
 async function init() {
   renderAreaTabs();
@@ -1106,6 +1258,7 @@ async function init() {
     });
   });
   bindPageToggle();
+  bindExecutiveSummary();
 
   document.querySelectorAll('[data-collapse]').forEach((btn) => {
     btn.addEventListener('click', () => {

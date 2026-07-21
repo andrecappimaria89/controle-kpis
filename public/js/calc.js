@@ -321,6 +321,190 @@ function trend(value) {
   return 'neutral';
 }
 
+// ============================================================================
+// RESUMO EXECUTIVO
+// Monta uma analise curta, em linguagem simples, a partir dos MESMOS dados
+// reais do dashboard (nunca inventa numeros). Ordena por data de verdade
+// (Data Fim das sprints; ordem de preenchimento dos meses) e nunca assume
+// que o ultimo item de um array e o mais recente sem checar.
+// ============================================================================
+
+/** Variacao percentual segura: nunca retorna NaN/Infinity, e null se nao for possivel calcular */
+function safeVariationPct(current, previous) {
+  if (current === null || current === undefined || previous === null || previous === undefined) return null;
+  if (previous === 0) return null; // regra explicita: nao calcular quando o anterior for zero
+  const v = ((current - previous) / previous) * 100;
+  if (!Number.isFinite(v)) return null;
+  return v;
+}
+
+function fmtPct1(v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return null;
+  return `${v >= 0 ? '+' : ''}${v.toFixed(1).replace('.', ',')}%`;
+}
+
+/** Sprints da Tabela 3 com algum dado (pontos ou bugs), ordenadas por Data Fim real */
+function sortedFilledSquad(squadRows) {
+  return (squadRows || [])
+    .filter((r) => isRowActive(r) && r.endDate && (isNum(r.pointsPlanned) || isNum(r.pointsDelivered) || isNum(r.bugsOpened) || isNum(r.bugsResolved)))
+    .slice()
+    .sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
+}
+
+function buildExecutiveSummary(automationRows, squadRows) {
+  const months = filledAutomationRows(automationRows);
+  const sprints = sortedFilledSquad(squadRows);
+
+  if (months.length === 0 && sprints.length === 0) {
+    return { insufficientData: true };
+  }
+
+  const lastMonth = months[months.length - 1] || null;
+  const prevMonth = months.length >= 2 ? months[months.length - 2] : null;
+  const lastSprint = sprints[sprints.length - 1] || null;
+  const prevSprint = sprints.length >= 2 ? sprints[sprints.length - 2] : null;
+
+  const noPreviousPeriod = !prevMonth && !prevSprint;
+
+  const periodLabel = [
+    lastMonth ? `Mês mais recente: ${lastMonth.month}` : null,
+    lastSprint ? `Sprint mais recente: ${lastSprint.sprint || '—'}` : null,
+  ].filter(Boolean).join(' · ') || 'Sem período identificado';
+
+  // ------------------------------------------------------------------------
+  // Monta os indicadores na ordem de prioridade pedida. Cada indicador so
+  // entra na lista se houver dado suficiente para calcula-lo.
+  // ------------------------------------------------------------------------
+  const indicators = [];
+
+  // 1) Entrega realizada x planejada (ultimas 2 sprints)
+  if (lastSprint) {
+    const agg = lastSprintsAggregate(squadRows, 2);
+    if (agg.totalPlanned) {
+      const attainment = (agg.totalDelivered / agg.totalPlanned) * 100;
+      const isGood = attainment >= 95;
+      indicators.push({
+        key: 'entrega',
+        kind: isGood ? 'positive' : 'negative',
+        text: `Entrega da sprint: ${Math.round(attainment)}% do planejado.`,
+        action: 'Revisar o planejamento da próxima sprint para reduzir o desvio.',
+      });
+    }
+  }
+
+  // 2) Bugs abertos x resolvidos (saldo da ultima sprint)
+  if (lastSprint && (isNum(lastSprint.bugsOpened) || isNum(lastSprint.bugsResolved))) {
+    const opened = toNum(lastSprint.bugsOpened) || 0;
+    const resolved = toNum(lastSprint.bugsResolved) || 0;
+    const saldo = resolved - opened;
+    indicators.push({
+      key: 'saldoBugs',
+      kind: saldo >= 0 ? 'positive' : 'negative',
+      text: `Bugs resolvidos: ${formatIntLocal(resolved)} resolvidos contra ${formatIntLocal(opened)} abertos.`,
+      action: 'Priorizar a correção dos bugs abertos mais antigos.',
+    });
+  }
+
+  // 3) Taxa de bugs (bugs abertos / pontos entregues da sprint mais recente)
+  if (lastSprint) {
+    const rate = bugsRatePerSprint(squadRows);
+    if (rate && rate.rate !== null) {
+      const isGood = rate.rate <= 10;
+      indicators.push({
+        key: 'taxaBugs',
+        kind: isGood ? 'positive' : 'negative',
+        text: `Taxa de bugs: ${rate.rate.toFixed(1).replace('.', ',')}% dos pontos entregues.`,
+        action: 'Analisar a causa dos bugs mais recorrentes antes da próxima sprint.',
+      });
+    }
+  }
+
+  // 4/5) Saude das automacoes (ou Automacoes em manutencao, dependendo da direcao)
+  if (lastMonth) {
+    const lastHealth = homologationRate(lastMonth.realized, lastMonth.homologated) * 100;
+    if (prevMonth) {
+      const prevHealth = homologationRate(prevMonth.realized, prevMonth.homologated) * 100;
+      const improved = lastHealth >= prevHealth;
+      indicators.push({
+        key: 'saude',
+        kind: improved ? 'positive' : 'negative',
+        text: improved
+          ? `Saúde das automações: subiu de ${Math.round(prevHealth)}% para ${Math.round(lastHealth)}%.`
+          : `Automações em manutenção: saúde caiu de ${Math.round(prevHealth)}% para ${Math.round(lastHealth)}%.`,
+        action: 'Priorizar a correção das automações instáveis.',
+      });
+    } else {
+      indicators.push({
+        key: 'saude',
+        kind: lastHealth >= 80 ? 'positive' : 'negative',
+        text: `Saúde das automações: ${Math.round(lastHealth)}% homologadas.`,
+        action: 'Priorizar a correção das automações instáveis.',
+      });
+    }
+  }
+
+  // 6) Evolucao dos testes automatizados (producao deste mes vs mes anterior)
+  if (lastMonth && prevMonth) {
+    const k1 = kpi1MonthlyDelta(automationRows);
+    if (k1) {
+      const pctText = k1.pct !== null ? ` (${fmtPct1(k1.pct * 100)})` : '';
+      indicators.push({
+        key: 'evolucaoTestes',
+        kind: k1.delta >= 0 ? 'positive' : 'negative',
+        text: `Testes automatizados: ${k1.delta >= 0 ? 'aumento' : 'queda'} de ${formatIntLocal(Math.abs(k1.delta))}${pctText} no período.`,
+        action: 'Manter o ritmo de automação e revisar prioridades do backlog.',
+      });
+    }
+  }
+
+  // 7) Outros: eficiencia vs planejamento mensal (usa a formula ja existente no projeto)
+  if (lastMonth && prevMonth) {
+    const kpi3 = kpi3EfficiencyVariation(automationRows);
+    if (kpi3) {
+      indicators.push({
+        key: 'eficiencia',
+        kind: kpi3.variation >= 0 ? 'positive' : 'negative',
+        text: `Eficiência (Realizado ÷ Planejado): ${kpi3.status.toLowerCase()} em relação ao mês anterior.`,
+        action: 'Revisar o planejamento mensal para alinhar com a capacidade real.',
+      });
+    }
+  }
+
+  const positives = indicators.filter((i) => i.kind === 'positive').slice(0, 3);
+  const attentions = indicators.filter((i) => i.kind === 'negative').slice(0, 3);
+  const actions = attentions.map((i) => i.action).slice(0, 3);
+
+  // ------------------------------------------------------------------------
+  // Frase de resultado geral (leitura de conjunto, no maximo ~25 palavras)
+  // ------------------------------------------------------------------------
+  let overallSentence;
+  if (indicators.length === 0) {
+    overallSentence = 'Ainda não há indicadores suficientes para avaliar a tendência geral do período.';
+  } else if (attentions.length === 0) {
+    overallSentence = 'Os indicadores apresentam evolução positiva neste período, sem pontos de atenção relevantes.';
+  } else if (positives.length === 0) {
+    overallSentence = 'Os principais indicadores pioraram em relação ao período anterior e exigem ações de correção.';
+  } else if (positives.length >= attentions.length) {
+    overallSentence = 'O período apresenta resultado majoritariamente positivo, com alguns pontos que merecem atenção.';
+  } else {
+    overallSentence = 'O período apresenta resultado misto, com pontos de atenção que exigem ações de correção.';
+  }
+
+  return {
+    insufficientData: false,
+    noPreviousPeriod,
+    periodLabel,
+    overallSentence,
+    positives,
+    attentions,
+    actions,
+  };
+}
+
+function formatIntLocal(v) {
+  return new Intl.NumberFormat('pt-BR').format(Math.round(v || 0));
+}
+
 // Exporta tudo em um unico objeto global simples (sem bundler / modulos ES)
 window.KpiCalc = {
   isNum,
@@ -345,6 +529,7 @@ window.KpiCalc = {
   velocity,
   bugsGeneralResolutionRate,
   bugsRatePerSprint,
+  buildExecutiveSummary,
   trend,
 };
 })();
