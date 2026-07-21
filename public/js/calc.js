@@ -166,14 +166,26 @@ function bugsGeneralResolutionRate(squadRows) {
 function kpi1MonthlyDelta(automationRows) {
   const filled = filledAutomationRows(automationRows);
   if (filled.length < 2) return null;
-  const last = filled[filled.length - 1];
-  const prev = filled[filled.length - 2];
-  const lastRealized = toNum(last.realized);
-  const prevRealized = toNum(prev.realized);
-  if (lastRealized === null || prevRealized === null) return null;
-  const delta = lastRealized - prevRealized;
-  const pct = prevRealized ? delta / prevRealized : null; // fracao, ou null se mes anterior for 0
-  return { delta, pct };
+
+  // "Producao" de cada mes preenchido = quanto o acumulado cresceu naquele mes
+  // (mesma logica do grafico). O primeiro mes preenchido nao tem mes anterior
+  // para comparar, entao sua producao e o proprio valor (base 0).
+  function producedAt(i) {
+    const value = toNum(filled[i].realized);
+    if (value === null) return null;
+    if (i === 0) return value;
+    const prevValue = toNum(filled[i - 1].realized);
+    return prevValue === null ? null : value - prevValue;
+  }
+
+  const lastIdx = filled.length - 1;
+  const currentOutput = producedAt(lastIdx);
+  const previousOutput = producedAt(lastIdx - 1);
+  if (currentOutput === null || previousOutput === null) return null;
+
+  const delta = currentOutput - previousOutput;
+  const pct = previousOutput ? delta / previousOutput : null; // fracao, ou null se producao do mes anterior for 0
+  return { delta, pct, currentOutput, previousOutput };
 }
 
 // ---------------------------------------------------------------------------

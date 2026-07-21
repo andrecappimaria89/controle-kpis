@@ -8,7 +8,7 @@ const MONTH_CYCLE = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Se
 const DEFAULT_KPI_CONFIG = {
   kpi1: {
     title: 'Crescimento Mensal da Automação',
-    description: 'Percentual de testes automatizados realizados, com meta de crescimento contínuo de 1 ponto percentual ao mês.',
+    description: 'Compara quanto foi produzido neste mês com quanto foi produzido no mês anterior (não o acumulado).',
     type: 'Mensal',
   },
   kpi3: {
