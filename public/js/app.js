@@ -13,7 +13,7 @@ const DEFAULT_KPI_CONFIG = {
   },
   kpi3: {
     title: 'Eficiência vs Planejamento Mensal',
-    description: 'Eficiência do mês (Realizado ÷ Planejado), calculada com a diferença entre o mês atual e o anterior.',
+    description: 'Variação percentual da eficiência (Realizado ÷ Planejado) do mês atual em relação ao mês anterior.',
     type: 'Geral',
   },
   kpi5: {
@@ -73,6 +73,7 @@ function defaultSquadRows(areaName) {
       ...s,
       bugsOpened: pair ? pair[0] : '',
       bugsResolved: pair ? pair[1] : '',
+      active: true,
     };
   });
 }
@@ -232,6 +233,7 @@ function hydrateStateFromSupabase(remote) {
         pointsDelivered: r.points_delivered ?? '',
         bugsOpened: r.bugs_opened ?? '',
         bugsResolved: r.bugs_resolved ?? '',
+        active: r.active !== false,
       }));
 
     const kpis = JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG));
@@ -436,12 +438,12 @@ function renderAgilityMetrics() {
   let deliveryValueCls = '';
   if (ratio > 1.0005) {
     deliveryValue = formatPercent(ratio - 1, { signed: true });
-    deliveryCaption = 'acima do planejado';
+    deliveryCaption = 'acima do planejado · 2 últimas sprints entregues';
     deliveryIconCls = 'green';
     deliveryValueCls = 'positive'; // verde no texto SOMENTE quando esta acima do planejado
   } else {
     deliveryValue = formatPercent(ratio);
-    deliveryCaption = 'entregue do planejado';
+    deliveryCaption = 'entregue do planejado · 2 últimas sprints entregues';
     deliveryIconCls = ratio >= 0.8 ? 'green' : ratio >= 0.5 ? 'orange' : 'red';
   }
 
@@ -555,7 +557,8 @@ function renderCharts() {
   const dataLabelOptions = {
     anchor: 'end',
     align: 'top',
-    offset: 2,
+    offset: 4,
+    clip: false, // evita que o rotulo da barra mais alta seja cortado pela borda do canvas
     color: '#374151',
     font: { weight: '700', size: 11 },
     formatter: (value) => formatInt(value),
@@ -564,14 +567,14 @@ function renderCharts() {
   const commonOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    layout: { padding: { top: 18 } },
+    layout: { padding: { top: 26 } },
     plugins: {
       legend: { display: false },
       datalabels: dataLabelOptions,
     },
     scales: {
       x: { grid: { display: false } },
-      y: { beginAtZero: true, grid: { color: '#eef0f6' } },
+      y: { beginAtZero: true, grace: '10%', grid: { color: '#eef0f6' } },
     },
   };
 
@@ -590,10 +593,10 @@ function renderCharts() {
   charts.bugs = new Chart(bugsCtx, {
     type: 'bar',
     data: {
-      labels: (squad || []).map((r) => r.sprint || '—'),
+      labels: (squad || []).filter((r) => window.KpiCalc.isRowActive(r)).map((r) => r.sprint || '—'),
       datasets: [
-        { label: 'Abertos', data: (squad || []).map((r) => toNum(r.bugsOpened) ?? 0), backgroundColor: '#f97316', borderRadius: 6 },
-        { label: 'Resolvidos', data: (squad || []).map((r) => toNum(r.bugsResolved) ?? 0), backgroundColor: '#16a34a', borderRadius: 6 },
+        { label: 'Abertos', data: (squad || []).filter((r) => window.KpiCalc.isRowActive(r)).map((r) => toNum(r.bugsOpened) ?? 0), backgroundColor: '#f97316', borderRadius: 6 },
+        { label: 'Resolvidos', data: (squad || []).filter((r) => window.KpiCalc.isRowActive(r)).map((r) => toNum(r.bugsResolved) ?? 0), backgroundColor: '#16a34a', borderRadius: 6 },
       ],
     },
     options: commonOptions,
@@ -649,14 +652,16 @@ function renderCharts() {
   });
 
   // ------ Gráfico de barras: Pontos Planejados x Pontos Entregues (Agilidade) ------
-  const squadLabels = (squad || []).map((r) => r.sprint || '—');
+  const activeSquad = (squad || []).filter((r) => window.KpiCalc.isRowActive(r));
+
+  const squadLabels = activeSquad.map((r) => r.sprint || '—');
   charts.agility = new Chart(agilityCtx, {
     type: 'bar',
     data: {
       labels: squadLabels,
       datasets: [
-        { label: 'Planejados', data: (squad || []).map((r) => toNum(r.pointsPlanned) ?? 0), backgroundColor: '#2563eb', borderRadius: 6 },
-        { label: 'Entregues', data: (squad || []).map((r) => toNum(r.pointsDelivered) ?? 0), backgroundColor: '#16a34a', borderRadius: 6 },
+        { label: 'Planejados', data: activeSquad.map((r) => toNum(r.pointsPlanned) ?? 0), backgroundColor: '#2563eb', borderRadius: 6 },
+        { label: 'Entregues', data: activeSquad.map((r) => toNum(r.pointsDelivered) ?? 0), backgroundColor: '#16a34a', borderRadius: 6 },
       ],
     },
     options: commonOptions,
@@ -699,7 +704,7 @@ function renderKpis() {
   const C = window.KpiCalc;
 
   const kpi1 = C.kpi1MonthlyDelta(automation);
-  const kpi3 = C.kpi3DeltaEfficiency(automation);
+  const kpi3 = C.kpi3EfficiencyVariation(automation);
   const kpi5 = C.kpi5BugsOpenedTrend(squad);
   const kpi7 = C.kpi7MonthlyHomologationRate(automation);
   const kpi8 = C.bugsGeneralResolutionRate(squad);
@@ -722,14 +727,21 @@ function renderKpis() {
     `));
   }
 
-  // KPI 3 (Geral) — eficiencia calculada com a DIFERENCA entre o mes atual e o anterior
+  // KPI 3 (Geral) — variacao % da eficiencia (Realizado/Planejado) vs mes anterior
   {
-    const cls = kpi3 === null ? '' : kpi3 >= 0 ? 'positive' : 'negative';
-    const phrase = kpi3 === null ? '<div class="kpi-phrase">Sem variação no Planejado entre os 2 últimos meses (÷0)</div>' : '';
-    automationBlocks.push(kpiListItem('kpi3', `
-      <div class="kpi-list-value ${cls}">${formatPercent(kpi3)}</div>
-      ${phrase}
-    `));
+    if (kpi3 === null) {
+      automationBlocks.push(kpiListItem('kpi3', '<div class="kpi-list-value">—</div><div class="kpi-phrase">Dados insuficientes (planejado zero ou só 1 mês cadastrado)</div>'));
+    } else {
+      const t = trendArrow(kpi3.variation);
+      const cls = kpi3.variation > 0.0005 ? 'positive' : kpi3.variation < -0.0005 ? 'negative' : '';
+      automationBlocks.push(kpiListItem('kpi3', `
+        <div class="kpi-list-value ${cls}">
+          ${formatPercent(kpi3.variation, { signed: true })}
+          <span class="kpi-trend ${t.cls}">${t.symbol}</span>
+        </div>
+        <div class="kpi-phrase">${kpi3.status} · atual: ${formatPercent(kpi3.current)} (mês anterior: ${formatPercent(kpi3.previous)})</div>
+      `));
+    }
   }
 
   // KPI 7 — taxa de automacoes homologadas (mensal): faixa de cor 0-50/51-80/81-100
@@ -744,13 +756,17 @@ function renderKpis() {
   {
     if (!kpi5) {
       bugBlocks.push(kpiListItem('kpi5', '<div class="kpi-list-value">—</div><div class="kpi-phrase">Dados insuficientes (cadastre Bugs Abertos na Tabela 3)</div>'));
+    } else if (kpi5.pct === null) {
+      bugBlocks.push(kpiListItem('kpi5', `
+        <div class="kpi-list-value">${formatInt(kpi5.opened)}</div>
+        <div class="kpi-phrase">Sem sprint anterior para comparar</div>
+      `));
     } else {
       const t = trendArrow(kpi5.pct);
-      const cls = kpi5.pct === null ? '' : kpi5.pct <= 0 ? 'positive' : 'negative'; // menos bugs abertos = positivo
-      const pctText = kpi5.pct !== null ? ` > ${formatPercent(kpi5.pct, { signed: true })}` : '';
+      const cls = kpi5.pct <= 0 ? 'positive' : 'negative'; // menos bugs abertos = positivo
       bugBlocks.push(kpiListItem('kpi5', `
         <div class="kpi-list-value ${cls}">
-          ${formatInt(kpi5.opened)}${pctText}
+          ${formatInt(kpi5.opened)} > ${formatPercent(kpi5.pct, { signed: true })}
           <span class="kpi-trend ${t.cls}">${t.symbol}</span>
         </div>
         <div class="kpi-phrase">Bugs da Sprint e % da referente a sprint anterior</div>
@@ -822,8 +838,10 @@ function renderSquadTable() {
   const tbody = document.querySelector('#squadTable tbody');
   tbody.innerHTML = rows.map((r, idx) => {
     const rate = window.KpiCalc.resolutionRate(r.bugsOpened, r.bugsResolved);
+    const active = r.active !== false;
     return `
-    <tr data-idx="${idx}">
+    <tr data-idx="${idx}" class="${active ? '' : 'row-inactive'}">
+      <td><input type="checkbox" class="row-include-checkbox" data-table="squad" data-idx="${idx}" data-field="active" ${active ? 'checked' : ''} title="Incluir esta sprint nos cálculos" /></td>
       <td><input type="date" class="cell-input date" data-table="squad" data-idx="${idx}" data-field="startDate" value="${r.startDate || ''}" /></td>
       <td><input type="date" class="cell-input date" data-table="squad" data-idx="${idx}" data-field="endDate" value="${r.endDate || ''}" /></td>
       <td><input type="text" maxlength="40" class="cell-input sprint" data-table="squad" data-idx="${idx}" data-field="sprint" value="${escapeHtml(r.sprint || '')}" placeholder="Sprint" /></td>
@@ -932,7 +950,7 @@ function addMonth(chosenMonth) {
 }
 
 function addSquadRow() {
-  currentAreaData().squad.push({ id: makeId(), startDate: '', endDate: '', sprint: '', pointsPlanned: '', pointsDelivered: '', bugsOpened: '', bugsResolved: '' });
+  currentAreaData().squad.push({ id: makeId(), startDate: '', endDate: '', sprint: '', pointsPlanned: '', pointsDelivered: '', bugsOpened: '', bugsResolved: '', active: true });
   scheduleAutosave();
   renderAll();
 }

@@ -97,6 +97,7 @@ async function saveAreaData(areaId, areaName, automationRows, squadRows, cycleTi
     bugs_opened: r.bugsOpened === '' || r.bugsOpened === undefined ? null : r.bugsOpened,
     bugs_resolved: r.bugsResolved === '' || r.bugsResolved === undefined ? null : r.bugsResolved,
     resolution_rate: window.KpiCalc.resolutionRate(r.bugsOpened, r.bugsResolved),
+    active: r.active !== false,
   }));
 
   const kpiPayload = Object.entries(kpiConfigs).map(([kpiKey, cfg]) => ({

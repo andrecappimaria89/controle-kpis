@@ -57,7 +57,7 @@ function filledAutomationRows(rows, requirePlanned = false) {
 /** Linhas da Tabela 3 (squad) que tem algum dado de bug preenchido, ordenadas por Data Fim */
 function filledSquadBugRows(squadRows) {
   return (squadRows || [])
-    .filter((r) => r.endDate && (isNum(r.bugsOpened) || isNum(r.bugsResolved)))
+    .filter((r) => isRowActive(r) && r.endDate && (isNum(r.bugsOpened) || isNum(r.bugsResolved)))
     .slice()
     .sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
 }
@@ -88,7 +88,7 @@ function aggregateHomologation(automationRows) {
  * variation = quanto o entregue ficou acima/abaixo do planejado nessas sprints.
  */
 function lastSprintsAggregate(squadRows, n = 2) {
-  const filled = (squadRows || []).filter((r) => isNum(r.pointsPlanned) || isNum(r.pointsDelivered));
+  const filled = (squadRows || []).filter((r) => isRowActive(r) && (isNum(r.pointsPlanned) || isNum(r.pointsDelivered)));
   const lastN = filled.slice(Math.max(0, filled.length - n));
   const totalPlanned = lastN.reduce((acc, r) => acc + (toNum(r.pointsPlanned) || 0), 0);
   const totalDelivered = lastN.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
@@ -98,7 +98,7 @@ function lastSprintsAggregate(squadRows, n = 2) {
 
 /** Velocity: media de pontos entregues nas ultimas N sprints preenchidas (padrao: 2) */
 function velocity(squadRows, n = 2) {
-  const filled = (squadRows || []).filter((r) => isNum(r.pointsPlanned) || isNum(r.pointsDelivered));
+  const filled = (squadRows || []).filter((r) => isRowActive(r) && (isNum(r.pointsPlanned) || isNum(r.pointsDelivered)));
   const lastN = filled.slice(Math.max(0, filled.length - n));
   if (!lastN.length) return null;
   const sum = lastN.reduce((acc, r) => acc + (toNum(r.pointsDelivered) || 0), 0);
@@ -116,7 +116,7 @@ function velocity(squadRows, n = 2) {
  */
 function bugsRatePerSprint(squadRows) {
   const filled = (squadRows || [])
-    .filter((r) => r.endDate && isNum(r.pointsDelivered))
+    .filter((r) => isRowActive(r) && r.endDate && isNum(r.pointsDelivered))
     .slice()
     .sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
   if (!filled.length) return null;
@@ -232,15 +232,31 @@ function automationDeltaSeries(automationRows, field) {
 // valores acumulados brutos.
 // Ex: Planejado 6->13 (delta 7), Realizado 5->6 (delta 1) => eficiencia = 1/7
 // ---------------------------------------------------------------------------
-function kpi3DeltaEfficiency(automationRows) {
+/**
+ * KPI "Eficiencia vs Planejamento Mensal"
+ * Regras:
+ *  1) Eficiencia Atual = Realizado do mes atual / Planejado do mes atual
+ *  2) Eficiencia Mes Anterior = Realizado do mes anterior / Planejado do mes anterior
+ *  3) Variacao = (EficienciaAtual - EficienciaAnterior) / EficienciaAnterior
+ * IMPORTANTE: "Variacao" e uma variacao percentual (quanto a eficiencia mudou
+ * em termos relativos), NAO a diferenca em pontos percentuais, e NAO a razao
+ * entre as diferencas brutas de Realizado/Planejado (essa ultima e o que
+ * causava resultados absurdos como 1800%, explicado no changelog/README).
+ */
+function kpi3EfficiencyVariation(automationRows) {
   const filled = filledAutomationRows(automationRows, true);
-  if (filled.length === 0) return null;
+  if (filled.length < 2) return null;
   const last = filled[filled.length - 1];
-  const prev = filled.length >= 2 ? filled[filled.length - 2] : null;
-  const deltaPlanned = prev ? toNum(last.planned) - toNum(prev.planned) : toNum(last.planned);
-  const deltaRealized = prev ? toNum(last.realized) - toNum(prev.realized) : toNum(last.realized);
-  if (!deltaPlanned) return null; // sem variacao de planejado -> eficiencia indefinida
-  return deltaRealized / deltaPlanned;
+  const prev = filled[filled.length - 2];
+  if (!toNum(last.planned) || !toNum(prev.planned)) return null; // planejado zero -> eficiencia indefinida
+
+  const current = automationPercentage(last.planned, last.realized); // fracao, ex: 0.4127
+  const previous = automationPercentage(prev.planned, prev.realized); // fracao, ex: 0.3617
+  if (!previous) return null; // eficiencia do mes anterior era zero -> variacao indefinida (divisao por zero)
+
+  const variation = (current - previous) / previous;
+  const status = variation > 0.0005 ? 'Melhorou' : variation < -0.0005 ? 'Piorou' : 'Sem alteração';
+  return { current, previous, variation, status };
 }
 
 /** Homologacao apenas do ultimo mes preenchido (usado no grafico de pizza "mensal") */
@@ -304,7 +320,7 @@ window.KpiCalc = {
   filledSquadBugRows,
   kpi1MonthlyDelta,
   kpi2QuarterlyGrowth,
-  kpi3DeltaEfficiency,
+  kpi3EfficiencyVariation,
   kpi4QuarterlyEfficiency,
   kpi4Phrase,
   kpi5BugsOpenedTrend,

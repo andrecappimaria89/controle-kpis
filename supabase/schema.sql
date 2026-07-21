@@ -46,6 +46,7 @@ create table if not exists squad_metrics (
   bugs_opened      numeric,                  -- Bugs Abertos na sprint
   bugs_resolved    numeric,                  -- Bugs Resolvidos na sprint
   resolution_rate  numeric,                  -- Resolvidos / Abertos (calculado no front-end)
+  active           boolean not null default true, -- checkbox "Incluir" - se false, a sprint fica de fora dos calculos
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
