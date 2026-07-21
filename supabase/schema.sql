@@ -45,6 +45,7 @@ create table if not exists squad_metrics (
   points_delivered numeric,
   bugs_opened      numeric,                  -- Bugs Abertos na sprint
   bugs_resolved    numeric,                  -- Bugs Resolvidos na sprint
+  resolution_rate  numeric,                  -- Resolvidos / Abertos (calculado no front-end)
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
