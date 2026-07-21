@@ -2,7 +2,7 @@
 // app.js - estado da aplicacao, renderizacao e interacoes.
 // ============================================================================
 
-const AREA_NAMES = ['DIRECT', 'CBB', 'PVP', 'CS', 'RFs', 'Autbank'];
+const AREA_NAMES = ['Financing', 'Channels', 'After Sales', 'Consortium& Insurance', 'Small Projects', 'Autbank Packages Control'];
 const MONTH_CYCLE = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 const DEFAULT_KPI_CONFIG = {
@@ -351,9 +351,9 @@ function renderAreaTabs() {
 }
 
 // ------------------------------ RENDER: METRIC CARDS --------------------------
-function metricCard({ icon, iconCls, label, value, caption, valueCls = '' }) {
+function metricCard({ icon, iconCls, label, value, caption, valueCls = '', cardCls = '' }) {
   return `
-    <div class="metric-card">
+    <div class="metric-card ${cardCls}">
       <div class="metric-icon ${iconCls}">${icon}</div>
       <div class="metric-label">${label}</div>
       <div class="metric-value ${valueCls}">${value}</div>
@@ -370,8 +370,8 @@ function renderAutomationMetrics() {
   const cards = [
     metricCard({ icon: '📋', iconCls: 'blue', label: 'Total Planejado', value: formatInt(totals.planned), caption: 'Automações planejadas' }),
     metricCard({ icon: '✅', iconCls: 'green', label: 'Total Realizado', value: formatInt(totals.realized), caption: 'Automações realizadas' }),
-    metricCard({ icon: '🛡️', iconCls: 'green', label: 'Automações Homologadas', value: formatInt(totals.homologated), caption: 'Automações homologadas' }),
-    metricCard({ icon: '%', iconCls: 'blue', label: '% Geral Automatizado', value: formatPercent(overallPct), caption: 'Percentual do planejado' }),
+    metricCard({ icon: '%', iconCls: 'blue', label: '% Geral automatizado realizado', value: formatPercent(overallPct), caption: 'Percentual do planejado' }),
+    metricCard({ icon: '🛡️', iconCls: 'green', label: 'Saúde da Automação', value: formatInt(totals.homologated), caption: 'Automações homologadas', cardCls: 'tint-green' }),
   ];
   document.getElementById('automationMetrics').innerHTML = cards.join('');
 }
@@ -610,7 +610,7 @@ function renderCharts() {
 
   const pieValues = hasData ? [monthly.homologated, naoHomologadas] : [1];
   const pieColors = hasData ? ['#16a34a', '#f97316'] : ['#e6e9f2'];
-  const pieLabels = hasData ? ['Homologadas', 'Não Homologadas'] : ['Sem dados'];
+  const pieLabels = hasData ? ['Realizadas', 'Exige Manutenção'] : ['Sem dados'];
 
   charts.homologation = new Chart(homologCtx, {
     type: 'doughnut',
@@ -877,6 +877,23 @@ function bindTableEvents() {
         value = '0';
         e.target.value = '0';
       } else {
+        e.target.classList.remove('invalid');
+      }
+
+      if (table === 'squad' && (field === 'startDate' || field === 'endDate') && value !== '') {
+        const rows = currentAreaData().squad;
+        const candidate = { ...rows[idx], [field]: value };
+        const overlaps = candidate.startDate && candidate.endDate && rows.some((r, i) => {
+          if (String(i) === idx) return false;
+          if (!r.startDate || !r.endDate) return false;
+          return new Date(candidate.startDate) <= new Date(r.endDate) && new Date(r.startDate) <= new Date(candidate.endDate);
+        });
+        if (overlaps) {
+          e.target.classList.add('invalid');
+          showToast('Essa sprint sobrepõe as datas de outra sprint já cadastrada.', 'error');
+          e.target.value = rows[idx][field] || '';
+          return;
+        }
         e.target.classList.remove('invalid');
       }
 
