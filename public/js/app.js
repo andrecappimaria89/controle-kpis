@@ -18,7 +18,7 @@ const DEFAULT_KPI_CONFIG = {
   },
   kpi5: {
     title: 'Taxa de Abertura de Bugs por Sprint',
-    description: 'Quantidade de bugs abertos na sprint mais recente e a variação percentual em relação à sprint anterior.',
+    description: 'Diferença de bugs abertos entre a sprint mais recente e a sprint anterior (quantos a mais ou a menos).',
     type: 'Mensal',
   },
   kpi7: {
@@ -752,24 +752,31 @@ function renderKpis() {
     `));
   }
 
-  // KPI 5 — quantidade de bugs abertos na sprint mais recente + variacao vs sprint anterior
+  // KPI 5 — diferenca de bugs abertos vs sprint anterior (nao mais o percentual como resultado principal)
   {
     if (!kpi5) {
       bugBlocks.push(kpiListItem('kpi5', '<div class="kpi-list-value">—</div><div class="kpi-phrase">Dados insuficientes (cadastre Bugs Abertos na Tabela 3)</div>'));
-    } else if (kpi5.pct === null) {
+    } else if (kpi5.delta === null) {
       bugBlocks.push(kpiListItem('kpi5', `
         <div class="kpi-list-value">${formatInt(kpi5.opened)}</div>
         <div class="kpi-phrase">Sem sprint anterior para comparar</div>
       `));
     } else {
-      const t = trendArrow(kpi5.pct);
-      const cls = kpi5.pct <= 0 ? 'positive' : 'negative'; // menos bugs abertos = positivo
+      const t = trendArrow(kpi5.delta);
+      const cls = kpi5.delta <= 0 ? 'positive' : 'negative'; // menos bugs abertos = positivo
+      const absDelta = Math.abs(kpi5.delta);
+      const bugsWord = absDelta === 1 ? 'bug' : 'bugs';
+      let phrase;
+      if (kpi5.delta > 0) phrase = `${formatInt(absDelta)} ${bugsWord} a mais que a sprint anterior`;
+      else if (kpi5.delta < 0) phrase = `${formatInt(absDelta)} ${bugsWord} abertos a menos que a sprint anterior`;
+      else phrase = 'Igual à sprint anterior';
+
       bugBlocks.push(kpiListItem('kpi5', `
         <div class="kpi-list-value ${cls}">
-          ${formatInt(kpi5.opened)} > ${formatPercent(kpi5.pct, { signed: true })}
+          ${formatSignedInt(kpi5.delta)} bugs
           <span class="kpi-trend ${t.cls}">${t.symbol}</span>
         </div>
-        <div class="kpi-phrase">Bugs da Sprint e % da referente a sprint anterior</div>
+        <div class="kpi-phrase">${phrase}</div>
       `));
     }
   }

@@ -137,11 +137,12 @@ function kpi5BugsOpenedTrend(squadRows) {
   if (filled.length === 0) return null;
   const last = filled[filled.length - 1];
   const opened = toNum(last.bugsOpened) || 0;
-  if (filled.length < 2) return { opened, pct: null };
+  if (filled.length < 2) return { opened, delta: null, pct: null };
   const prev = filled[filled.length - 2];
   const prevOpened = toNum(prev.bugsOpened) || 0;
-  const pct = prevOpened ? (opened - prevOpened) / prevOpened : null;
-  return { opened, pct };
+  const delta = opened - prevOpened;
+  const pct = prevOpened ? delta / prevOpened : null;
+  return { opened, delta, pct };
 }
 
 // ---------------------------------------------------------------------------
