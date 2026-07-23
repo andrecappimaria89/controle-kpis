@@ -799,9 +799,10 @@ function renderKpis() {
       else if (kpi5.delta < 0) phrase = `${formatInt(absDelta)} ${bugsWord} abertos a menos que a sprint anterior`;
       else phrase = 'Igual à sprint anterior';
 
+      const pctText = kpi5.pct !== null ? ` (${formatPercent(kpi5.pct, { signed: true })})` : '';
       bugBlocks.push(kpiListItem('kpi5', `
         <div class="kpi-list-value ${cls}">
-          ${formatSignedInt(kpi5.delta)} bugs
+          ${formatSignedInt(kpi5.delta)} bugs${pctText}
           <span class="kpi-trend ${t.cls}">${t.symbol}</span>
         </div>
         <div class="kpi-phrase">${phrase}</div>

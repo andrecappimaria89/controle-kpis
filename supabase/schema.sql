@@ -122,6 +122,9 @@ alter table squad_metrics enable row level security;
 drop policy if exists "public read areas" on areas;
 create policy "public read areas" on areas for select using (true);
 
+drop policy if exists "public update areas" on areas;
+create policy "public update areas" on areas for update using (true) with check (true);
+
 drop policy if exists "public all automation_metrics" on automation_metrics;
 create policy "public all automation_metrics" on automation_metrics
   for all using (true) with check (true);
