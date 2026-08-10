@@ -57,7 +57,7 @@ function filledAutomationRows(rows, requirePlanned = false) {
 /** Linhas da Tabela 3 (squad) que tem algum dado de bug preenchido, ordenadas por Data Fim */
 function filledSquadBugRows(squadRows) {
   return (squadRows || [])
-    .filter((r) => isRowActive(r) && r.endDate && (isNum(r.bugsOpened) || isNum(r.bugsResolved)))
+    .filter((r) => isRowActive(r) && r.endDate && (isNum(r.bugsOpened) || isNum(r.bugsResolved) || isNum(r.bugsCancelled)))
     .slice()
     .sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
 }
@@ -164,29 +164,27 @@ function bugsGeneralResolutionRate(squadRows) {
 // Retorna a diferenca absoluta (quantidade) E o percentual de crescimento
 // referente ao mes anterior. Ex: Jan=5, Fev=20 -> delta=+15, pct=+300%
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// KPI 1 - Crescimento Mensal da Automacao
+// Compara Mes Atual x Mes Anterior diretamente:
+//   Percentual = ((MesAtual - MesAnterior) / MesAnterior) * 100
+// Ex: 487 -> 490 = +3 (+0,62%). NAO combina duas diferencas (isso gerava
+// percentuais absurdos como -99,4% quando a diferenca do mes anterior era
+// pequena e a variacao seguinte parecia enorme em termos relativos).
+// ---------------------------------------------------------------------------
 function kpi1MonthlyDelta(automationRows) {
   const filled = filledAutomationRows(automationRows);
   if (filled.length < 2) return null;
 
-  // "Producao" de cada mes preenchido = quanto o acumulado cresceu naquele mes
-  // (mesma logica do grafico). O primeiro mes preenchido nao tem mes anterior
-  // para comparar, entao sua producao e o proprio valor (base 0).
-  function producedAt(i) {
-    const value = toNum(filled[i].realized);
-    if (value === null) return null;
-    if (i === 0) return value;
-    const prevValue = toNum(filled[i - 1].realized);
-    return prevValue === null ? null : value - prevValue;
-  }
+  const last = filled[filled.length - 1];
+  const prev = filled[filled.length - 2];
+  const lastRealized = toNum(last.realized);
+  const prevRealized = toNum(prev.realized);
+  if (lastRealized === null || prevRealized === null) return null;
 
-  const lastIdx = filled.length - 1;
-  const currentOutput = producedAt(lastIdx);
-  const previousOutput = producedAt(lastIdx - 1);
-  if (currentOutput === null || previousOutput === null) return null;
-
-  const delta = currentOutput - previousOutput;
-  const pct = previousOutput ? delta / previousOutput : null; // fracao, ou null se producao do mes anterior for 0
-  return { delta, pct, currentOutput, previousOutput };
+  const delta = lastRealized - prevRealized;
+  const pct = prevRealized ? delta / prevRealized : null; // fracao, ou null se o mes anterior for zero (evita divisao por zero)
+  return { delta, pct };
 }
 
 // ---------------------------------------------------------------------------

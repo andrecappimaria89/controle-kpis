@@ -96,6 +96,7 @@ async function saveAreaData(areaId, areaName, automationRows, squadRows, cycleTi
     points_delivered: r.pointsDelivered === '' || r.pointsDelivered === undefined ? null : r.pointsDelivered,
     bugs_opened: r.bugsOpened === '' || r.bugsOpened === undefined ? null : r.bugsOpened,
     bugs_resolved: r.bugsResolved === '' || r.bugsResolved === undefined ? null : r.bugsResolved,
+    bugs_cancelled: r.bugsCancelled === '' || r.bugsCancelled === undefined ? null : r.bugsCancelled,
     resolution_rate: window.KpiCalc.resolutionRate(r.bugsOpened, r.bugsResolved),
     active: r.active !== false,
   }));

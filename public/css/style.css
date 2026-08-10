@@ -22,8 +22,8 @@
   --text-muted: #6b7385;
   --text-faint: #9aa1b2;
 
-  --wine: #6d1220;
-  --wine-dark: #4d0c17;
+  --wine: #8f1926;
+  --wine-dark: #6b121c;
 
   --radius-lg: 18px;
   --radius-md: 12px;
@@ -76,6 +76,14 @@ button {
 
 .brand { display: flex; align-items: center; gap: 12px; }
 
+.brand-logo {
+  max-height: 34px;
+  max-width: 140px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #fff;
+  padding: 3px 6px;
+}
 .brand-mark {
   font-family: var(--font-mono);
   font-weight: 700;
@@ -258,6 +266,14 @@ main {
   margin-top: 4px;
 }
 .metric-value.positive { color: var(--green); }
+.metric-trend {
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.metric-trend.up { color: var(--green); }
+.metric-trend.down { color: var(--red); }
+.metric-trend.neutral { color: var(--text-faint); }
 .metric-value-input {
   display: block;
   width: 100%;
@@ -284,10 +300,17 @@ main {
   margin-top: 4px;
 }
 .cycle-time-input {
-  width: 44px;
+  width: 56px;
   flex: none;
   margin: 0;
-  text-align: right;
+  padding: 6px 4px;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+.cycle-time-input::-webkit-outer-spin-button,
+.cycle-time-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 .cycle-time-unit {
   font-family: var(--font-display);

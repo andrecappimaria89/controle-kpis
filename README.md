@@ -97,17 +97,41 @@ demonstração rápida.
 
 ## Regras de cálculo (resumo)
 
-Todas as fórmulas estão implementadas e comentadas em `public/js/calc.js`:
+Todas as fórmulas estão implementadas, comentadas e **testadas automaticamente**
+em `public/js/calc.js` (veja `test/calc.test.js`):
 
 - **% Automação** = Realizados / Planejados (retorna 0 se Planejados vazio/zero).
 - **Índice de Resolução** = Resolvidos / Abertos (retorna 0 se Abertos e
   Resolvidos forem zero; evita divisão por zero).
-- **KPI 1** — variação de Realizados entre os dois últimos meses preenchidos.
-- **KPI 2** — crescimento composto entre o primeiro e o último mês preenchido.
-- **KPI 3** — variação de Realizados menos variação de Planejados (mês a mês).
-- **KPI 4** — mesma lógica do KPI 3, comparando o último mês preenchido com o
-  mês 3 posições antes (ou o primeiro mês preenchido, se não houver histórico
-  suficiente), com frase automática de acima/abaixo/alinhado ao planejado.
-- **KPI 5** — Resolvidos / Abertos do último mês preenchido, limitado a 100%.
-- **KPI 6** — soma de Resolvidos / soma de Abertos dos últimos 3 meses
-  preenchidos, com indicação de backlog (ou "Operação equilibrada" se zero).
+- **KPI 1 — Crescimento Mensal** — compara quanto foi produzido no mês atual
+  com quanto foi produzido no mês anterior (não os valores acumulados brutos).
+- **KPI 3 — Eficiência vs Planejamento** — variação percentual da eficiência
+  (Realizado ÷ Planejado) do mês atual em relação ao mês anterior.
+- **KPI 5 — Taxa de Abertura de Bugs por Sprint** — diferença de bugs abertos
+  entre a sprint mais recente e a anterior (quantidade + percentual).
+- **KPI 7 — Taxa Automação Homologadas** — percentual de automações
+  homologadas em relação ao total realizado no último mês (limitado a 100%).
+- **KPI 8 — Taxa Geral de Resolução de Bugs** — soma de todos os bugs abertos
+  e resolvidos cadastrados na Tabela 3.
+- **Resumo Executivo** — análise automática com destaques positivos, pontos
+  de atenção e ações recomendadas, gerada a partir dos mesmos dados reais do
+  dashboard (nunca inventa números).
+
+## Testes automatizados e CI
+
+```bash
+npm test
+```
+
+Roda a suíte de testes de `calc.js` (test runner nativo do Node, sem
+dependência nova). O arquivo `.github/workflows/ci.yml` executa essa mesma
+suíte automaticamente a cada push/PR no GitHub, como um gate de qualidade
+antes do Netlify publicar.
+
+## Arquitetura e plano de migração futura
+
+Veja [`ARCHITECTURE.md`](./ARCHITECTURE.md) para uma explicação das camadas
+do código (domínio / acesso a dados / apresentação) e um mapeamento de como
+cada peça de um stack corporativo maior (Angular, Java/Spring Boot, MongoDB,
+Kafka, Docker/Kubernetes, Azure DevOps, SonarQube, Veracode) se encaixaria
+numa migração futura, caso um dia seja necessária.

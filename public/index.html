@@ -19,7 +19,8 @@
 <header class="app-header">
   <div class="header-top">
     <div class="brand">
-      <span class="brand-mark">KPI</span>
+      <img src="assets/logo-toyota.png" alt="Banco Toyota" class="brand-logo" onerror="this.style.display='none'; document.getElementById('brandFallback').style.display='flex';" />
+      <span id="brandFallback" class="brand-mark" style="display:none;">KPI</span>
       <div class="brand-text">
         <h1>KPIs Área de Qualidade</h1>
         <p id="connectionStatus" class="connection-status">verificando conexão…</p>
@@ -212,10 +213,11 @@
                 <th>Data Início</th>
                 <th>Data Fim</th>
                 <th>Sprint</th>
-                <th>Pontos Planejados</th>
-                <th>Pontos Entregues</th>
+                <th>Commitment</th>
+                <th>Completed</th>
                 <th>Bugs Abertos</th>
                 <th>Bugs Resolvidos</th>
+                <th>Bugs Cancelados</th>
                 <th>Índice de Resolução</th>
                 <th></th>
               </tr>
