@@ -176,14 +176,28 @@ function kpi1MonthlyDelta(automationRows) {
   const filled = filledAutomationRows(automationRows);
   if (filled.length < 2) return null;
 
-  const last = filled[filled.length - 1];
-  const prev = filled[filled.length - 2];
-  const lastRealized = toNum(last.realized);
-  const prevRealized = toNum(prev.realized);
-  if (lastRealized === null || prevRealized === null) return null;
+  // Producao real de cada mes = diferenca entre o Realizado (acumulado) do mes
+  // e o Realizado (acumulado) do mes anterior a ele (mesma logica usada no
+  // grafico, ver automationDeltaSeries).
+  const productions = [];
+  let baseline = null;
+  filled.forEach((r) => {
+    const cumulative = toNum(r.realized);
+    if (cumulative === null) return;
+    productions.push(baseline === null ? cumulative : cumulative - baseline);
+    baseline = cumulative;
+  });
 
-  const delta = lastRealized - prevRealized;
-  const pct = prevRealized ? delta / prevRealized : null; // fracao, ou null se o mes anterior for zero (evita divisao por zero)
+  if (productions.length < 2) return null;
+
+  const lastProduction = productions[productions.length - 1]; // quanto foi produzido no mes atual
+  const prevProduction = productions[productions.length - 2]; // quanto foi produzido no mes anterior
+
+  // "delta" e a QUANTIDADE produzida no mes atual (ex: "+2 automacoes criadas"),
+  // NAO a diferenca entre as duas producoes. O percentual, sim, compara a
+  // producao do mes atual com a do mes anterior (ex: "60% menor").
+  const delta = lastProduction;
+  const pct = prevProduction ? (lastProduction - prevProduction) / prevProduction : null;
   return { delta, pct };
 }
 

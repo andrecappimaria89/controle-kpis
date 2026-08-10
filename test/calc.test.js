@@ -41,18 +41,34 @@ test('isRowActive: linha sem o campo "active" continua contando (compatibilidade
 // ---------------------------------------------------------------------------
 // KPI 1 - Crescimento Mensal (compara PRODUCAO do mes atual vs mes anterior)
 // ---------------------------------------------------------------------------
-test('kpi1MonthlyDelta bate com os 3 exemplos de referencia (comparacao direta mes atual x mes anterior)', () => {
-  const up = C.kpi1MonthlyDelta([{ month: 'A', planned: 1, realized: 487, active: true }, { month: 'B', planned: 1, realized: 490, active: true }]);
-  assert.equal(up.delta, 3);
-  assert.ok(Math.abs(up.pct - 0.00616016) < 0.0001);
+test('kpi1MonthlyDelta: delta = quantidade produzida no mes atual; pct = variacao dessa producao vs mes anterior', () => {
+  // Producao de cada mes = diferenca entre os acumulados (mesma logica do grafico).
+  // A=480 (base) -> B: producao 5 (485-480) -> C: producao 10 (495-485): producao subiu -> "maior"
+  const up = C.kpi1MonthlyDelta([
+    { month: 'A', planned: 1, realized: 480, active: true },
+    { month: 'B', planned: 1, realized: 485, active: true },
+    { month: 'C', planned: 1, realized: 495, active: true },
+  ]);
+  assert.equal(up.delta, 10); // "+10 automacoes criadas" (producao do mes atual)
+  assert.ok(Math.abs(up.pct - 1) < 0.0001); // 100% maior que a producao do mes anterior (5 -> 10)
 
-  const flat = C.kpi1MonthlyDelta([{ month: 'A', planned: 1, realized: 487, active: true }, { month: 'B', planned: 1, realized: 487, active: true }]);
-  assert.equal(flat.delta, 0);
+  // B: producao 5 (485-480) -> C: producao 5 (490-485): mesma producao -> "sem alteracao"
+  const flat = C.kpi1MonthlyDelta([
+    { month: 'A', planned: 1, realized: 480, active: true },
+    { month: 'B', planned: 1, realized: 485, active: true },
+    { month: 'C', planned: 1, realized: 490, active: true },
+  ]);
+  assert.equal(flat.delta, 5);
   assert.equal(flat.pct, 0);
 
-  const down = C.kpi1MonthlyDelta([{ month: 'A', planned: 1, realized: 490, active: true }, { month: 'B', planned: 1, realized: 487, active: true }]);
-  assert.equal(down.delta, -3);
-  assert.ok(Math.abs(down.pct + 0.00612245) < 0.0001);
+  // B: producao 10 (490-480) -> C: producao 2 (492-490): caiu -> "menor" (exemplo real reportado)
+  const down = C.kpi1MonthlyDelta([
+    { month: 'A', planned: 1, realized: 480, active: true },
+    { month: 'B', planned: 1, realized: 490, active: true },
+    { month: 'C', planned: 1, realized: 492, active: true },
+  ]);
+  assert.equal(down.delta, 2); // "+2 automacoes criadas"
+  assert.ok(Math.abs(down.pct + 0.8) < 0.0001); // 80% menor que a producao do mes anterior (10 -> 2)
 });
 
 test('kpi1MonthlyDelta: ignora meses desmarcados (checkbox "Incluir")', () => {
