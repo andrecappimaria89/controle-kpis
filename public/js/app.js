@@ -431,7 +431,7 @@ function renderBugsMetrics() {
   const cards = [
     metricCard({ icon: '🐛', iconCls: 'orange', label: 'Total de Bugs Abertos', value: formatInt(totalOpened), caption: 'Bugs em aberto' }),
     metricCard({ icon: '✅', iconCls: 'green', label: 'Total de Bugs Resolvidos', value: formatInt(totalResolved), caption: 'Bugs resolvidos' }),
-    metricCard({ icon: '🚫', iconCls: 'blue', label: 'Bugs Cancelados', value: formatInt(totalCancelled), caption: 'Bugs cancelados' }),
+    metricCard({ icon: '🚫', iconCls: 'blue', label: 'Total de Bugs Cancelados', value: formatInt(totalCancelled), caption: 'Bugs cancelados' }),
     metricCard({ icon: '⚠️', iconCls: backlog > 0 ? 'red' : 'green', label: 'Backlog Atual', value: formatInt(backlog), caption: 'Bugs pendentes' }),
   ];
   document.getElementById('bugsMetrics').innerHTML = cards.join('');
@@ -758,19 +758,35 @@ function renderKpis() {
   const automationBlocks = [];
   const bugBlocks = [];
 
-  // KPI 1 — comparacao direta Mes Atual x Mes Anterior (quantidade + percentual real)
+  // KPI 1 — "+2 automações criadas | 40% maior comparação ao mês anterior"
   {
     const delta = kpi1 ? kpi1.delta : null;
     const t = trendArrow(delta);
     const cls = delta === null ? '' : delta > 0 ? 'positive' : delta < 0 ? 'negative' : '';
-    const pctText = kpi1 && kpi1.pct !== null ? ` > ${formatPercent(kpi1.pct, { signed: true })}` : '';
-    const phrase = delta === 0 ? 'Sem crescimento no mês — mesmo volume do mês anterior' : 'vs mês anterior';
+    let mainText;
+    let phrase = '';
+    if (delta === null) {
+      mainText = '—';
+      phrase = 'Dados insuficientes (cadastre pelo menos 2 meses)';
+    } else if (delta === 0) {
+      mainText = '0 automações criadas';
+      phrase = 'Sem crescimento no mês — mesmo volume do mês anterior';
+    } else {
+      const qtyText = `${delta > 0 ? '+' : ''}${formatInt(delta)} automações criadas`;
+      let pctText = '';
+      if (kpi1.pct !== null) {
+        const pctAbs = Math.round(Math.abs(kpi1.pct) * 100);
+        const pctWord = kpi1.pct >= 0 ? 'maior' : 'menor';
+        pctText = ` | ${pctAbs}% ${pctWord} comparação ao mês anterior`;
+      }
+      mainText = `${qtyText}${pctText}`;
+    }
     automationBlocks.push(kpiListItem('kpi1', `
-      <div class="kpi-list-value ${cls}">
-        ${formatSignedInt(delta)}${pctText}
+      <div class="kpi-list-value ${cls} kpi-list-value-wrap">
+        ${mainText}
         <span class="kpi-trend ${t.cls}">${t.symbol}</span>
       </div>
-      <div class="kpi-phrase">${phrase}</div>
+      ${phrase ? `<div class="kpi-phrase">${phrase}</div>` : ''}
     `));
   }
 
