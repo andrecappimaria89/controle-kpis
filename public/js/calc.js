@@ -155,8 +155,9 @@ function bugsGeneralResolutionRate(squadRows) {
   if (filled.length === 0) return null;
   const totalOpened = filled.reduce((acc, r) => acc + (toNum(r.bugsOpened) || 0), 0);
   const totalResolved = filled.reduce((acc, r) => acc + (toNum(r.bugsResolved) || 0), 0);
+  const totalCancelled = filled.reduce((acc, r) => acc + (toNum(r.bugsCancelled) || 0), 0);
   const rate = totalOpened ? Math.min(totalResolved / totalOpened, 1) : (totalResolved ? 1 : 0);
-  return { totalOpened, totalResolved, rate };
+  return { totalOpened, totalResolved, totalCancelled, rate };
 }
 
 // ---------------------------------------------------------------------------

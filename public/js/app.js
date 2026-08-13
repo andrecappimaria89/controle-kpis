@@ -426,7 +426,7 @@ function renderBugsMetrics() {
   const totalCancelled = (squad || [])
     .filter((r) => window.KpiCalc.isRowActive(r))
     .reduce((a, r) => a + (toNum(r.bugsCancelled) || 0), 0);
-  const backlog = totalOpened - totalResolved;
+  const backlog = totalOpened - totalResolved - totalCancelled;
 
   const cards = [
     metricCard({ icon: '🐛', iconCls: 'orange', label: 'Total de Bugs Abertos', value: formatInt(totalOpened), caption: 'Bugs em aberto' }),
@@ -643,6 +643,7 @@ function renderCharts() {
       datasets: [
         { label: 'Abertos', data: (squad || []).filter((r) => window.KpiCalc.isRowActive(r)).map((r) => toNum(r.bugsOpened) ?? 0), backgroundColor: '#f97316', borderRadius: 6 },
         { label: 'Resolvidos', data: (squad || []).filter((r) => window.KpiCalc.isRowActive(r)).map((r) => toNum(r.bugsResolved) ?? 0), backgroundColor: '#16a34a', borderRadius: 6 },
+        { label: 'Cancelados', data: (squad || []).filter((r) => window.KpiCalc.isRowActive(r)).map((r) => toNum(r.bugsCancelled) ?? 0), backgroundColor: '#2563eb', borderRadius: 6 },
       ],
     },
     options: commonOptions,
@@ -853,7 +854,7 @@ function renderKpis() {
       const cls = rateColorClass(kpi8.rate);
       bugBlocks.push(kpiListItem('kpi8', `
         <div class="kpi-list-value ${cls}">${formatPercent(kpi8.rate)}</div>
-        <div class="kpi-phrase">Bugs abertos: ${formatInt(kpi8.totalOpened)} · Bugs resolvidos: ${formatInt(kpi8.totalResolved)}</div>
+        <div class="kpi-phrase">Bugs abertos: ${formatInt(kpi8.totalOpened)} · Bugs resolvidos: ${formatInt(kpi8.totalResolved)} · Bugs cancelados: ${formatInt(kpi8.totalCancelled)}</div>
       `));
     }
   }

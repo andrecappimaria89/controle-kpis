@@ -157,6 +157,19 @@ test('bugsRatePerSprint bate com o exemplo de referencia (74 pts, 6 bugs -> 8,11
   assert.ok(Math.abs(r.rate - 8.108108108108109) < 0.0001);
 });
 
+test('bugsGeneralResolutionRate soma tambem os bugs cancelados (KPI8)', () => {
+  const squad = [
+    { endDate: '2026-06-01', bugsOpened: 7, bugsResolved: 7, bugsCancelled: 0, active: true },
+    { endDate: '2026-06-15', bugsOpened: 5, bugsResolved: 4, bugsCancelled: 0, active: true },
+    { endDate: '2026-06-29', bugsOpened: 4, bugsResolved: 4, bugsCancelled: 0, active: true },
+    { endDate: '2026-07-13', bugsOpened: 7, bugsResolved: 7, bugsCancelled: 1, active: true },
+  ];
+  const r = C.bugsGeneralResolutionRate(squad);
+  assert.equal(r.totalOpened, 23);
+  assert.equal(r.totalResolved, 22);
+  assert.equal(r.totalCancelled, 1);
+});
+
 // ---------------------------------------------------------------------------
 // Resumo Executivo - nunca deve gerar NaN/Infinity, e trata dados insuficientes
 // ---------------------------------------------------------------------------
